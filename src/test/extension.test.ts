@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 suite('HexScope Extension', () => {
 
     async function getActivatedExtension() {
-        const ext = vscode.extensions.all.find(e => e.id.includes('hex-scope-vscode'));
+        const ext = vscode.extensions.all.find(e => e.id.includes('vscode-hex-scope'));
         assert.ok(ext, 'HexScope extension should be present in the test instance');
         if (ext && !ext.isActive) {
             await ext.activate();

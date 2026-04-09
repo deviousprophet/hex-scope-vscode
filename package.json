@@ -1,5 +1,5 @@
 {
-  "name": "hex-scope-vscode",
+  "name": "vscode-hex-scope",
   "displayName": "HexScope",
   "publisher": "deviousprophet",
   "description": "Custom editor for Intel HEX (.hex) files — memory grid, byte inspector with bit view and multi-byte interpreter, hex/ASCII/address search, record table, syntax-highlighted raw view, CRC and checksum analysis, segment labels, and in-place byte patching with checksum recomputation",
@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/deviousprophet/hex-scope-vscode"
+    "url": "https://github.com/deviousprophet/vscode-hex-scope"
   },
   "engines": {
     "vscode": "^1.110.0"
