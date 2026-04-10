@@ -7,7 +7,7 @@ import { esc, fmtB }                                  from './utils';
 import { rerender }                                   from './render';
 import { renderMemHeader, renderMemBody, applySel, scrollTo } from './memoryView';
 import { renderInspector, renderBits, renderLabels, updateInspector } from './sidebar';
-import { renderStructPanel, onSelectionChangeForStruct }              from './struct';
+import { renderStructPanel, renderStructPins, onSelectionChangeForStruct }              from './struct';
 import { initSearch, runSearch, clearSearch, nextMatch, prevMatch } from './search';
 import { initFlatBytes, buildMemRows }                from './data';
 
@@ -21,6 +21,7 @@ window.addEventListener('message', (e: MessageEvent) => {
             S.labels      = (msg.labels as typeof S.labels) ?? [];
             S.rawSource   = (msg.rawSource as string) ?? '';
             S.structs     = (msg.structs as typeof S.structs) ?? [];
+            S.structPins  = (msg.structPins as typeof S.structPins) ?? [];
             initFlatBytes();
             buildMemRows();
             // Choose default view: raw if there are errors, memory if valid
@@ -116,11 +117,18 @@ function render(): void {
                 <div id="raw-view" class="${S.currentView === 'raw' ? 'visible' : ''}"></div>
             </div>
             <div id="sidebar">
-                <div class="sb-scroll">
+                <div class="sb-tabs">
+                    <button class="sb-tab ${S.sidebarTab === 'inspector' ? 'active' : ''}" id="sbt-insp">Inspector</button>
+                    <button class="sb-tab ${S.sidebarTab === 'struct'    ? 'active' : ''}" id="sbt-struct">Advanced</button>
+                </div>
+                <div class="sb-tab-panel ${S.sidebarTab === 'inspector' ? 'active' : ''}" id="sbp-insp">
                     <div class="sb-section" id="s-insp"></div>
                     <div class="sb-section" id="s-bits"></div>
-                    <div class="sb-section" id="s-struct"></div>
                     <div class="sb-section" id="s-labels"></div>
+                </div>
+                <div class="sb-tab-panel ${S.sidebarTab === 'struct' ? 'active' : ''}" id="sbp-struct">
+                    <div class="sb-section" id="s-struct"></div>
+                    <div class="sb-section" id="s-struct-pins"></div>
                 </div>
             </div>
         </div>
@@ -225,12 +233,29 @@ function render(): void {
     // Wire search module
     initSearch(() => switchView('memory'));
 
+    // Sidebar tabs
+    document.getElementById('sbt-insp')!.addEventListener('click', () => {
+        S.sidebarTab = 'inspector';
+        document.getElementById('sbt-insp')!.classList.add('active');
+        document.getElementById('sbt-struct')!.classList.remove('active');
+        document.getElementById('sbp-insp')!.classList.add('active');
+        document.getElementById('sbp-struct')!.classList.remove('active');
+    });
+    document.getElementById('sbt-struct')!.addEventListener('click', () => {
+        S.sidebarTab = 'struct';
+        document.getElementById('sbt-insp')!.classList.remove('active');
+        document.getElementById('sbt-struct')!.classList.add('active');
+        document.getElementById('sbp-insp')!.classList.remove('active');
+        document.getElementById('sbp-struct')!.classList.add('active');
+    });
+
     // Initial renders
     renderStats();
     renderMemHeader();
     renderInspector();
     renderBits();
     renderStructPanel();
+    renderStructPins();
     renderLabels();
     setupCtxMenu();
 

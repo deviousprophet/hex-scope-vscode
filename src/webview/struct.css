@@ -13,6 +13,15 @@
     font-size: 10px; color: var(--addr-fg); font-family: var(--font-ui);
 }
 
+.struct-addr-pfx {
+    flex-shrink: 0;
+    font-family: var(--font-editor); font-size: 11px;
+    color: var(--addr-fg); line-height: 1;
+    padding: 2px 0 2px 2px;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
 .struct-addr-inp {
     flex: 1; min-width: 0;
     background: rgba(0,0,0,.25); border: 1px solid var(--border);
@@ -23,11 +32,24 @@
 
 .struct-sel {
     flex: 1; min-width: 0;
-    background: rgba(0,0,0,.25); border: 1px solid var(--border);
-    border-radius: 3px; color: var(--fg); font-family: var(--font-ui);
+    background: var(--input-bg); border: 1px solid var(--input-bdr);
+    border-radius: 3px; color: var(--input-fg); font-family: var(--font-ui);
     font-size: 11px; padding: 2px 4px; outline: none;
 }
-.struct-sel:focus { border-color: var(--high-color); }
+.struct-sel:focus { border-color: var(--focus-bdr); }
+
+/* Small icon buttons (✎ / ✕) inline with the struct selector */
+.struct-btn-icon {
+    flex-shrink: 0;
+    width: 22px; height: 22px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 3px; font-size: 11px; cursor: pointer;
+    background: rgba(255,255,255,.04); border: 1px solid var(--border);
+    color: var(--addr-fg); transition: background .1s, border-color .1s, color .1s;
+}
+.struct-btn-icon:hover { background: rgba(255,255,255,.12); border-color: var(--fg); color: var(--fg); }
+.struct-btn-icon-danger { color: var(--err); border-color: rgba(244,135,113,.3); background: rgba(244,135,113,.06); }
+.struct-btn-icon-danger:hover { background: rgba(244,135,113,.2); border-color: var(--err); }
 
 .struct-btn-row {
     display: flex; gap: 4px; flex-wrap: wrap;
@@ -67,6 +89,18 @@
 .struct-result-meta {
     font-size: 10px; color: var(--addr-fg); font-family: var(--font-ui);
 }
+
+/* Save-pin button — inline in result header, right-aligned */
+.struct-pin-save-btn {
+    margin-left: auto; flex-shrink: 0;
+    background: rgba(255,255,255,.04); border: 1px solid var(--border);
+    border-radius: 3px; font-size: 10px; font-family: var(--font-ui);
+    color: var(--addr-fg); padding: 1px 7px; cursor: pointer;
+    transition: background .1s, border-color .1s, color .1s;
+    white-space: nowrap;
+}
+.struct-pin-save-btn:hover { background: rgba(255,255,255,.12); border-color: var(--fg); color: var(--fg); }
+.struct-pin-save-btn.pinned { color: var(--high-color); border-color: rgba(79,195,247,.35); cursor: default; }
 .struct-result-empty {
     font-size: 11px; font-style: italic; color: var(--non-graphic);
     margin: 4px 0;
@@ -115,12 +149,12 @@
 .sfe-name-inp:focus, .sfe-count-inp:focus { border-color: var(--high-color); }
 
 .sfe-type-sel, .sfe-endian-sel {
-    background: rgba(0,0,0,.25); border: 1px solid var(--border);
-    border-radius: 2px; color: var(--fg); font-family: var(--font-ui);
+    background: var(--input-bg); border: 1px solid var(--input-bdr);
+    border-radius: 2px; color: var(--input-fg); font-family: var(--font-ui);
     font-size: 10px; padding: 1px 2px; outline: none; width: 100%;
     box-sizing: border-box;
 }
-.sfe-type-sel:focus, .sfe-endian-sel:focus { border-color: var(--high-color); }
+.sfe-type-sel:focus, .sfe-endian-sel:focus { border-color: var(--focus-bdr); }
 
 .sfe-del-btn {
     background: transparent; border: none; color: var(--addr-fg);
@@ -136,3 +170,35 @@
     transition: border-color .1s, color .1s; text-align: center;
 }
 .struct-add-field-btn:hover { border-color: var(--high-color); color: var(--high-color); }
+
+/* ── Saved overlay pins list ──────────────────────────────────── */
+.struct-pin-item {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 4px; border-radius: 4px; cursor: pointer;
+    border: 1px solid transparent;
+    transition: background .1s, border-color .1s;
+}
+.struct-pin-item:hover {
+    background: var(--hover-bg); border-color: var(--border);
+}
+.struct-pin-body  { flex: 1; min-width: 0; }
+.struct-pin-name  {
+    font-size: 11px; font-weight: 600; color: var(--fg);
+    font-family: var(--font-ui);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.struct-pin-note  {
+    font-size: 10px; color: var(--addr-fg); font-family: var(--font-ui); margin-top: 1px;
+}
+.struct-pin-meta  {
+    font-size: 10px; color: var(--addr-fg); font-family: var(--font-editor); margin-top: 1px;
+}
+.struct-pin-del {
+    flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent; border: none;
+    color: var(--addr-fg); font-size: 10px; cursor: pointer; border-radius: 2px;
+    opacity: 0; transition: opacity .1s, color .1s;
+}
+.struct-pin-item:hover .struct-pin-del { opacity: 1; }
+.struct-pin-del:hover { color: var(--err); }

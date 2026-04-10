@@ -22,3 +22,22 @@
     letter-spacing: 0; text-transform: none;
 }
 .sb-empty { color: var(--non-graphic); font-size: 11px; font-style: italic; }
+
+/* ── Sidebar tabs ────────────────────────────────────────────── */
+.sb-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.sb-tab {
+    flex: 1; padding: 6px 4px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; font-family: var(--font-ui);
+    background: transparent; border: none; border-bottom: 2px solid transparent;
+    color: var(--addr-fg); cursor: pointer;
+    transition: color .12s, border-color .12s;
+}
+.sb-tab:hover { color: var(--fg); }
+.sb-tab.active { color: var(--high-color); border-bottom-color: var(--high-color); }
+.sb-tab-panel { flex: 1; overflow-y: auto; overflow-x: hidden; display: none; min-height: 0; }
+.sb-tab-panel.active { display: block; }

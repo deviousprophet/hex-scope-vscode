@@ -5,11 +5,12 @@
 import { S }       from './state';
 import { esc }     from './utils';
 import { vscode }  from './api';
+import { rerender } from './render';
 import {
     FIELD_TYPES, STRUCT_PRESETS,
     fieldByteSize, structByteSize, decodeStruct, allStructs,
 } from './struct-codec.js';
-import type { StructDef, StructFieldType, StructFieldEndian } from './types';
+import type { StructDef, StructFieldType, StructFieldEndian, StructPin } from './types';
 
 // Re-export codec symbols so callers can import from a single path.
 export {
@@ -20,6 +21,22 @@ export type { DecodedField } from './struct-codec.js';
 
 // ── Sidebar panel render ──────────────────────────────────────────
 
+/** Debounce timer for live address-input decode. */
+let _decodeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleDecode(): void {
+    if (_decodeTimer) { clearTimeout(_decodeTimer); }
+    _decodeTimer = setTimeout(() => {
+        const inp = document.getElementById('struct-addr-inp') as HTMLInputElement | null;
+        if (inp) {
+            const v = parseInt(inp.value.replace(/^0x/i, ''), 16);
+            S.activeStructAddr = isNaN(v) ? null : v;
+        }
+        renderDecodeResult();
+        _decodeTimer = null;
+    }, 250);
+}
+
 export function renderStructPanel(): void {
     const sec = document.getElementById('s-struct');
     if (!sec) { return; }
@@ -27,60 +44,55 @@ export function renderStructPanel(): void {
     const addrVal = S.activeStructAddr !== null
         ? S.activeStructAddr.toString(16).toUpperCase().padStart(8, '0') : '';
     const all = allStructs();
-    const badge = S.structs.length > 0 ? `<span class="sb-badge">${S.structs.length} custom</span>` : '';
+    const badge = S.structs.length > 0 ? `<span class="sb-badge">${S.structs.length}</span>` : '';
 
     const structOpts = all.length === 0
         ? '<option value="">— No structs —</option>'
-        : all.map(d =>
-            `<option value="${esc(d.id)}" ${S.activeStructId === d.id ? 'selected' : ''}>${esc(d.name)}</option>`
-          ).join('');
+        : all.map(d => {
+            const sz = structByteSize(d);
+            return `<option value="${esc(d.id)}" ${S.activeStructId === d.id ? 'selected' : ''}>${esc(d.name)} (${sz} B)</option>`;
+          }).join('');
 
     const isPreset  = S.activeStructId?.startsWith('__preset_') ?? false;
-    const hasStruct = S.activeStructId !== null && all.find(d => d.id === S.activeStructId);
+    const hasCustom = S.activeStructId !== null && !isPreset && all.some(d => d.id === S.activeStructId);
 
     sec.innerHTML =
         `<div class="sb-hdr">Struct Overlay ${badge}</div>` +
         `<div class="struct-controls">` +
+        // Address row with 0x prefix
         `<div class="struct-row">` +
-        `<label class="struct-lbl">Address</label>` +
+        `<span class="struct-addr-pfx">0x</span>` +
         `<input id="struct-addr-inp" class="struct-addr-inp" type="text" ` +
                `value="${esc(addrVal)}" placeholder="08000000" maxlength="8" autocomplete="off" spellcheck="false">` +
         `</div>` +
+        // Struct picker row with inline manage icons
         `<div class="struct-row">` +
-        `<label class="struct-lbl">Struct</label>` +
         `<select id="struct-sel" class="struct-sel">${structOpts}</select>` +
-        `</div>` +
-        `<div class="struct-btn-row">` +
-        `<button id="struct-btn-apply" class="struct-btn struct-btn-apply" ` +
-               `title="Decode memory at address using selected struct">Apply</button>` +
-        (hasStruct && !isPreset
-            ? `<button id="struct-btn-edit" class="struct-btn struct-btn-secondary" title="Edit struct definition">Edit</button>`
-            : '') +
-        `<button id="struct-btn-new" class="struct-btn struct-btn-secondary" title="Create a new struct definition">New</button>` +
-        (hasStruct && !isPreset
-            ? `<button id="struct-btn-del" class="struct-btn struct-btn-danger" title="Delete struct definition">Delete</button>`
+        (hasCustom
+            ? `<button id="struct-btn-edit" class="struct-btn struct-btn-icon" title="Edit struct definition">✎</button>` +
+              `<button id="struct-btn-del"  class="struct-btn struct-btn-icon struct-btn-icon-danger" title="Delete struct definition">✕</button>`
             : '') +
         `</div>` +
+        // New struct always available
+        `<button id="struct-btn-new" class="struct-add-field-btn">+ New Struct</button>` +
         `</div>` +
         `<div id="struct-decode-result"></div>`;
 
-    // Wire controls
-    document.getElementById('struct-addr-inp')!.addEventListener('change', e => {
-        const v = parseInt((e.target as HTMLInputElement).value.replace(/^0x/i, ''), 16);
+    // Wire events
+    const addrInp = document.getElementById('struct-addr-inp') as HTMLInputElement;
+    addrInp.addEventListener('input', () => { scheduleDecode(); });
+    addrInp.addEventListener('change', () => {
+        const v = parseInt(addrInp.value.replace(/^0x/i, ''), 16);
         S.activeStructAddr = isNaN(v) ? null : v;
+        renderDecodeResult();
     });
 
     document.getElementById('struct-sel')!.addEventListener('change', e => {
-        const val = (e.target as HTMLSelectElement).value;
-        S.activeStructId = val || null;
-        renderStructPanel(); // re-render to show/hide edit+delete buttons
-    });
-
-    document.getElementById('struct-btn-apply')?.addEventListener('click', () => {
-        const addrRaw = (document.getElementById('struct-addr-inp') as HTMLInputElement).value.replace(/^0x/i, '');
-        S.activeStructAddr = addrRaw ? parseInt(addrRaw, 16) : null;
-        if (isNaN(S.activeStructAddr!)) { S.activeStructAddr = null; }
-        renderDecodeResult();
+        // Persist current address before re-render replaces the input element
+        const v = parseInt(addrInp.value.replace(/^0x/i, ''), 16);
+        S.activeStructAddr = isNaN(v) ? null : v;
+        S.activeStructId = (e.target as HTMLSelectElement).value || null;
+        renderStructPanel();
     });
 
     document.getElementById('struct-btn-new')?.addEventListener('click', () => {
@@ -99,7 +111,7 @@ export function renderStructPanel(): void {
         renderStructPanel();
     });
 
-    // If we already have a valid selection + address, render the result immediately
+    // Decode immediately if we already have a valid address + struct
     if (S.activeStructId && S.activeStructAddr !== null) {
         renderDecodeResult();
     }
@@ -113,7 +125,7 @@ function renderDecodeResult(): void {
 
     const def = allStructs().find(d => d.id === S.activeStructId);
     if (!def) {
-        el.innerHTML = `<div class="sb-empty struct-result-empty">Select a struct and press Apply.</div>`;
+        el.innerHTML = `<div class="sb-empty struct-result-empty">Select a struct to decode.</div>`;
         return;
     }
     if (S.activeStructAddr === null) {
@@ -123,16 +135,19 @@ function renderDecodeResult(): void {
 
     const rows = decodeStruct(def, S.activeStructAddr, S.flatBytes, S.endian);
     const totalBytes = structByteSize(def);
-    const baseHex = S.activeStructAddr.toString(16).toUpperCase().padStart(8, '0');
+    const baseAddr = S.activeStructAddr;
+    const baseHex = baseAddr.toString(16).toUpperCase().padStart(8, '0');
 
     if (rows.length === 0) {
         el.innerHTML = `<div class="sb-empty struct-result-empty">No fields defined.</div>`;
         return;
     }
 
+    const alreadyPinned = S.structPins.some(p => p.structId === def.id && p.addr === baseAddr);
+
     const trows = rows.map(r => {
         const offHex  = r.byteOffset.toString(16).toUpperCase().padStart(4, '0');
-        const addrHex = (S.activeStructAddr! + r.byteOffset).toString(16).toUpperCase().padStart(8, '0');
+        const addrHex = (baseAddr + r.byteOffset).toString(16).toUpperCase().padStart(8, '0');
         const noData  = !r.hasData ? ' struct-no-data' : '';
         return `<tr class="struct-drow${noData}" data-addr="${addrHex}" title="0x${addrHex}">` +
             `<td class="sdf-off">+${offHex}</td>` +
@@ -145,9 +160,23 @@ function renderDecodeResult(): void {
     el.innerHTML =
         `<div class="struct-result-hdr">` +
         `<span class="struct-result-name">${esc(def.name)}</span>` +
-        `<span class="struct-result-meta">@ 0x${baseHex} · ${totalBytes} bytes</span>` +
+        `<span class="struct-result-meta">@ 0x${baseHex} · ${totalBytes}B</span>` +
+        `<button id="struct-btn-pin" class="struct-pin-save-btn${alreadyPinned ? ' pinned' : ''}" ` +
+               `title="${alreadyPinned ? 'Already saved' : 'Save this overlay to the pins list'}">` +
+               `${alreadyPinned ? '📌' : '📌 Save'}` +
+        `</button>` +
         `</div>` +
         `<table class="struct-decode-tbl"><tbody>${trows}</tbody></table>`;
+
+    // Pin button
+    document.getElementById('struct-btn-pin')?.addEventListener('click', () => {
+        if (alreadyPinned) { return; }
+        const pin: StructPin = { id: `pin_${Date.now()}`, structId: def.id, addr: baseAddr };
+        S.structPins = [...S.structPins, pin];
+        vscode.postMessage({ type: 'saveStructPins', pins: S.structPins });
+        renderStructPins();
+        renderDecodeResult(); // re-render to update pin button state
+    });
 
     // Click row → select that address in memory/inspector
     el.querySelectorAll<HTMLElement>('.struct-drow[data-addr]').forEach(row => {
@@ -295,12 +324,103 @@ export function renderStructEditor(existing: StructDef | null): void {
 
 // ── Selection helper ──────────────────────────────────────────────
 
-/** Called when the user's byte selection changes; auto-fills the address box if empty. */
+/** Called when the user's byte selection changes.
+ *  - Struct tab active: always sync address to selection and live-decode.
+ *  - Struct tab hidden: fill address only when the box is still empty (pre-fills for later).
+ */
 export function onSelectionChangeForStruct(): void {
     if (S.selStart === null) { return; }
     const inp = document.getElementById('struct-addr-inp') as HTMLInputElement | null;
-    if (inp && !inp.value.trim()) {
+    if (!inp) { return; }
+
+    if (S.sidebarTab === 'struct') {
+        // Live sync: update address and immediately decode
+        inp.value = S.selStart.toString(16).toUpperCase().padStart(8, '0');
+        S.activeStructAddr = S.selStart;
+        renderDecodeResult();
+    } else if (!inp.value.trim()) {
+        // Pre-fill so the address is ready when the user switches to the struct tab
         inp.value = S.selStart.toString(16).toUpperCase().padStart(8, '0');
         S.activeStructAddr = S.selStart;
     }
+}
+
+// ── Struct Pins list ──────────────────────────────────────────────
+
+export function renderStructPins(): void {
+    const sec = document.getElementById('s-struct-pins');
+    if (!sec) { return; }
+
+    const badge = S.structPins.length > 0
+        ? `<span class="sb-badge">${S.structPins.length}</span>` : '';
+
+    if (S.structPins.length === 0) {
+        sec.innerHTML =
+            `<div class="sb-hdr">Saved Overlays ${badge}</div>` +
+            `<div class="sb-empty">Decode a struct and click 📌 to save it here.</div>`;
+        return;
+    }
+
+    const items = S.structPins.map((pin, i) => {
+        const def = allStructs().find(d => d.id === pin.structId);
+        const defName = def ? def.name : `? (${pin.structId})`;
+        const totalBytes = def ? structByteSize(def) : 0;
+        const addrHex = pin.addr.toString(16).toUpperCase().padStart(8, '0');
+        const note = pin.note ? `<div class="struct-pin-note">${esc(pin.note)}</div>` : '';
+        return (
+            `<div class="struct-pin-item" data-idx="${i}">` +
+            `<div class="struct-pin-body">` +
+            `<div class="struct-pin-name">${esc(defName)}</div>` +
+            `${note}` +
+            `<div class="struct-pin-meta">0x${addrHex} · ${totalBytes}B</div>` +
+            `</div>` +
+            `<button class="struct-pin-del" data-idx="${i}" title="Remove pin">✕</button>` +
+            `</div>`
+        );
+    }).join('');
+
+    sec.innerHTML =
+        `<div class="sb-hdr">Saved Overlays ${badge}</div>` +
+        items;
+
+    // Click item body → jump to address + highlight bytes + show decode
+    sec.querySelectorAll<HTMLElement>('.struct-pin-item').forEach(item => {
+        item.addEventListener('click', e => {
+            // Don't trigger from delete button
+            if ((e.target as HTMLElement).closest('.struct-pin-del')) { return; }
+            const idx = parseInt(item.dataset.idx!);
+            const pin = S.structPins[idx];
+            if (!pin) { return; }
+            const def = allStructs().find(d => d.id === pin.structId);
+            if (!def) { return; }
+
+            const size = structByteSize(def);
+            S.activeStructId   = pin.structId;
+            S.activeStructAddr = pin.addr;
+            S.selStart = pin.addr;
+            S.selEnd   = pin.addr + size - 1;
+
+            // Switch content pane to memory view, then apply selection + scroll
+            rerender.toMemory();
+            import('./memoryView.js').then(m => {
+                m.applySel();
+                m.scrollTo(pin.addr);
+            });
+            import('./sidebar.js').then(m => m.updateInspector());
+
+            // Update decoder panel in the Advanced tab
+            renderStructPanel();
+        });
+    });
+
+    // Delete button
+    sec.querySelectorAll<HTMLElement>('.struct-pin-del').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = parseInt(btn.dataset.idx!);
+            S.structPins = S.structPins.filter((_, i) => i !== idx);
+            vscode.postMessage({ type: 'saveStructPins', pins: S.structPins });
+            renderStructPins();
+            renderDecodeResult(); // refresh pin button state
+        });
+    });
 }

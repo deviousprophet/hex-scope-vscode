@@ -57,12 +57,14 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
         // Load struct definitions from workspace state
         const structKey = `hexScope.structs.${document.uri.toString()}`;
+        const structPinKey = `hexScope.structPins.${document.uri.toString()}`;
 
         const postInit = () => webviewPanel.webview.postMessage({
             type: 'init',
             parseResult: serializeParseResult(parseResult, format),
-            labels:  this._context.workspaceState.get(labelKey, []),
-            structs: this._context.workspaceState.get(structKey, []),
+            labels:      this._context.workspaceState.get(labelKey, []),
+            structs:     this._context.workspaceState.get(structKey, []),
+            structPins:  this._context.workspaceState.get(structPinKey, []),
             rawSource: raw,
         });
 
@@ -117,6 +119,10 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 }
                 case 'saveStructs': {
                     await this._context.workspaceState.update(structKey, msg.structs);
+                    break;
+                }
+                case 'saveStructPins': {
+                    await this._context.workspaceState.update(structPinKey, msg.pins);
                     break;
                 }
                 case 'updateLabelVisibility': {

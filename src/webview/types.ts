@@ -65,3 +65,11 @@ export interface StructDef {
     name: string;
     fields: StructField[];
 }
+
+/** A saved struct overlay instance: one struct definition pinned to one address. */
+export interface StructPin {
+    id: string;
+    structId: string;  // references StructDef.id (preset or user-defined)
+    addr: number;      // base address
+    note?: string;     // optional short label
+}

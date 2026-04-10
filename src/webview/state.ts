@@ -1,7 +1,7 @@
 // ── Shared mutable state ─────────────────────────────────────────
 // All modules import this object and mutate it directly.
 
-import type { SerializedParseResult, SegmentLabel, SearchMode, MemRow, StructDef } from './types';
+import type { SerializedParseResult, SegmentLabel, SearchMode, MemRow, StructDef, StructPin } from './types';
 
 export const BPR = 16; // bytes per memory row
 
@@ -25,4 +25,6 @@ export const S = {
     structs:      [] as StructDef[],           // user-defined struct definitions
     activeStructId:   null as string | null,   // id of currently selected struct
     activeStructAddr: null as number | null,   // base address for struct decode
+    structPins:   [] as StructPin[],           // saved (structId, addr) overlay instances
+    sidebarTab:  'inspector' as 'inspector' | 'struct',  // active sidebar tab
 };
