@@ -67,12 +67,13 @@ sample/
 | Address | Content | Size |
 |---------|---------|------|
 | `0x08000000` | Cortex-M3 vector table (SP + 19 exception/IRQ vectors) | 128 B |
-| `0x080000C0` | ARM Thumb-2 Reset_Handler, SystemInit, main, app_run stubs | 70 B |
-| `0x08010000` | Flash config block + string constants | 64 B |
+| `0x080000C0` | ARM Thumb-2 Reset_Handler + app function stubs | 70 B |
+| `0x08000100` | String constants: extension ID, MCU name, version, status tokens | 48 B |
+| `0x08010000` | Flash options word (A5 5A pattern) + reset handler address | 16 B |
 
-**Stats:** 2 segments · 262 bytes · 0 errors
+**Stats:** 4 segments · 262 bytes · 20 records · 0 errors
 
-**Use for:** Standard 16-byte record parsing, ELA-based segment gap, realistic STM32 layout.
+**Use for:** Standard 16-byte record parsing, ELA-based segment gaps, realistic STM32-style layout with 4 non-contiguous segments.
 
 ---
 
@@ -82,7 +83,7 @@ sample/
 
 **Target:** Same as `stm32_16bpr.hex` — byte-for-byte identical data, different record size.
 
-**Stats:** 2 segments · 262 bytes · 0 errors
+**Stats:** 4 segments · 262 bytes · 0 errors
 
 **Use for:** Verifying that the parser produces identical results regardless of record byte count.
 
