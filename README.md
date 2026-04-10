@@ -1,10 +1,10 @@
 # HexScope
 
-A VS Code custom editor for Intel HEX (`.hex`) files. Open any embedded firmware image and inspect its memory layout, analyze byte values, search the address space, patch bytes in-place, and annotate address ranges — all without leaving the editor.
+A VS Code custom editor for **Intel HEX** (`.hex`) and **Motorola SREC** (`.srec`, `.mot`, `.s19`, `.s28`, `.s37`) files. Open any embedded firmware image and inspect its memory layout, analyze byte values, search the address space, patch bytes in-place, and annotate address ranges — all without leaving the editor.
 
 ## Opening a file
 
-Right-click a `.hex` file in the Explorer and choose **Open with HexScope Viewer**, or click the button that appears in the editor title bar when a `.hex` file is open.
+Right-click a `.hex`, `.srec`, `.mot`, `.s19`, `.s28`, or `.s37` file in the Explorer and choose **Open with HexScope Viewer**, or click the button that appears in the editor title bar when a supported file is open.
 
 ## Views
 
@@ -23,11 +23,13 @@ The default view. Shows firmware data as a 16-byte hex grid with:
 
 ### Records
 
-A table of every record parsed from the raw file, showing line number, record type badge (Data, EOF, Extended Linear Address, etc.), the 16-bit address field, the resolved 32-bit address, byte count, raw data bytes, checksum byte, and whether the checksum is valid.
+A table of every record parsed from the raw file, showing line number, record type badge, the address field, the resolved 32-bit address, byte count, raw data bytes, checksum byte, and whether the checksum is valid.
+
+For Intel HEX files the badge labels are: Data, EOF, Extended Linear Address, etc. For SREC files: Header (S0), Data S1/S2/S3, Record Count (S5/S6), and End S7/S8/S9. A format badge in the stats bar (`IHEX` or `SREC`) identifies which parser was used.
 
 ### Raw
 
-The original Intel HEX source with syntax highlighting. A TextMate grammar assigns distinct colors to the start code, byte count, address field, record type, data bytes, and checksum.
+The original source file with syntax highlighting. Separate TextMate grammars cover Intel HEX and Motorola SREC — both assign distinct colors to the start code, byte count, address field, record type, data bytes, and checksum.
 
 ## Inspector sidebar
 
@@ -71,7 +73,7 @@ Click **Edit** in the toolbar to enter edit mode.
 - **Right-click → Fill/Patch** on a multi-byte selection applies the same operation to all selected bytes
 - Edited bytes are highlighted in amber with an underline in the memory grid
 - The toolbar shows the pending change count and a **Save** button
-- **Save** rebuilds the Intel HEX data records with updated bytes, recomputes per-record checksums, and writes the file to disk
+  - **Save** rebuilds the data records with updated bytes, recomputes per-record checksums, and writes the file to disk. Intel HEX files are serialized as `:` records; SREC files are serialized preserving the original record type (S1/S2/S3) and address width
 - **✕ Cancel** discards all pending edits and restores the original values
 - **Ctrl+Z** undoes the last edit operation
 
@@ -105,14 +107,16 @@ Label address ranges with a name and color to annotate firmware regions (e.g., i
 
 | Command | Description |
 |---------|-------------|
-| `Open with HexScope Viewer` | Open the selected or active `.hex` file in HexScope |
+| `Open with HexScope Viewer` | Open the selected or active `.hex` / `.srec` / `.mot` / `.s19` file in HexScope |
 | `HexScope: Add Segment Label` | Open the segment label creation form |
 | `HexScope: Copy Selection as Hex String` | Copy selected bytes as a hex string |
 | `HexScope: Copy Selection as C Array` | Copy selected bytes as a C byte array literal |
 | `HexScope: Copy Selection as ASCII` | Copy selected bytes as ASCII text |
 | `HexScope: Copy Raw HEX Record` | Copy the raw Intel HEX record line(s) for the selection |
 
-## Supported Intel HEX record types
+## Supported record types
+
+### Intel HEX
 
 | Type | Name |
 |------|------|
@@ -125,7 +129,23 @@ Label address ranges with a name and color to annotate firmware regions (e.g., i
 
 Both Extended Linear Address (type 04) and Extended Segment Address (type 02) are fully supported for 32-bit address resolution.
 
+### Motorola SREC
+
+| Type | Name | Address width |
+|------|------|---------------|
+| `S0` | Header | 2 bytes |
+| `S1` | Data | 2 bytes |
+| `S2` | Data | 3 bytes |
+| `S3` | Data | 4 bytes |
+| `S5` | Record Count | 2 bytes |
+| `S6` | Record Count | 3 bytes |
+| `S7` | End of File | 4 bytes |
+| `S8` | End of File | 3 bytes |
+| `S9` | End of File | 2 bytes |
+
+S1, S2, and S3 records may be mixed within the same file. The execution start address is read from the S7, S8, or S9 end record.
+
 ## Limitations
 
-- Only Intel HEX format is supported; SREC / Motorola S-Record is not
-- Edit mode modifies data record bytes only; address extension records and start-address records are preserved unchanged
+- Edit mode modifies data record bytes only; address extension records (IHEX type 02/04) and start-address records (IHEX type 03/05 and SREC S7/S8/S9) are preserved unchanged
+- Raw Binary (`.bin`) import is not supported

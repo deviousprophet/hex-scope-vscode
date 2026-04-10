@@ -56,6 +56,11 @@
 .svl  { font-family: var(--font-editor); font-weight: 600; }
 .s-ok  { color: var(--ok);  margin-left: auto; }
 .s-err { color: var(--err); font-weight: 700; }
+.si-fmt .svl {
+    font-family: var(--font-ui); font-size: 10px; font-weight: 700; letter-spacing: .04em;
+    padding: 1px 6px; border-radius: 3px;
+    color: var(--high-color); background: rgba(156,220,254,.12); border: 1px solid rgba(156,220,254,.3);
+}
 
 /* Edit mode toggle button (visible when NOT in edit mode) */
 .tb-edit-btn {

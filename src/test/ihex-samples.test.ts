@@ -3,9 +3,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { parseIntelHex } from '../parser/IntelHexParser';
 
-// Sample files are at <workspace-root>/sample/; tests compile to out/test/
-const SAMPLES = path.resolve(__dirname, '..', '..', 'sample');
-const load = (name: string) => fs.readFileSync(path.join(SAMPLES, name), 'utf8');
+// Sample files are at <workspace-root>/sample/ihex/; tests compile to out/test/
+const SAMPLES  = path.resolve(__dirname, '..', '..', 'sample');
+const IHEX_DIR = path.join(SAMPLES, 'ihex');
+const loadHex  = (name: string) => fs.readFileSync(path.join(IHEX_DIR, name), 'utf8');
 
 // ── minimal.hex ─────────────────────────────────────────────────────────────
 // A hand-crafted file using only 16-bit addressing.  Two disjoint
@@ -13,7 +14,7 @@ const load = (name: string) => fs.readFileSync(path.join(SAMPLES, name), 'utf8')
 
 suite('sample: minimal.hex', () => {
     let r: ReturnType<typeof parseIntelHex>;
-    setup(() => { r = parseIntelHex(load('minimal.hex')); });
+    setup(() => { r = parseIntelHex(loadHex('minimal.hex')); });
 
     test('no parse errors', () => {
         assert.strictEqual(r.checksumErrors, 0);
@@ -51,7 +52,7 @@ suite('sample: minimal.hex', () => {
 
 suite('sample: firmware.hex', () => {
     let r: ReturnType<typeof parseIntelHex>;
-    setup(() => { r = parseIntelHex(load('firmware.hex')); });
+    setup(() => { r = parseIntelHex(loadHex('firmware.hex')); });
 
     test('parses cleanly with no errors', () => {
         assert.strictEqual(r.checksumErrors, 0);
@@ -64,7 +65,7 @@ suite('sample: firmware.hex', () => {
 
     test('at least two Extended Linear Address (type 04) records are present', () => {
         const elaCount = r.records.filter(rec => rec.recordType === 0x04).length;
-        assert.ok(elaCount >= 2, `expected \u22652 ELA records, got ${elaCount}`);
+        assert.ok(elaCount >= 2, `expected >=2 ELA records, got ${elaCount}`);
     });
 
     test('first memory segment starts at 0x08000000', () => {
@@ -89,7 +90,7 @@ suite('sample: firmware.hex', () => {
 
 suite('sample: stm32_16bpr.hex', () => {
     let r: ReturnType<typeof parseIntelHex>;
-    setup(() => { r = parseIntelHex(load('stm32_16bpr.hex')); });
+    setup(() => { r = parseIntelHex(loadHex('stm32_16bpr.hex')); });
 
     test('no parse errors', () => {
         assert.strictEqual(r.checksumErrors, 0);
@@ -131,8 +132,8 @@ suite('sample: stm32_32bpr.hex', () => {
     let r32: ReturnType<typeof parseIntelHex>;
     let r16: ReturnType<typeof parseIntelHex>;
     setup(() => {
-        r32 = parseIntelHex(load('stm32_32bpr.hex'));
-        r16 = parseIntelHex(load('stm32_16bpr.hex'));
+        r32 = parseIntelHex(loadHex('stm32_32bpr.hex'));
+        r16 = parseIntelHex(loadHex('stm32_16bpr.hex'));
     });
 
     test('no parse errors', () => {
@@ -171,7 +172,7 @@ suite('sample: stm32_32bpr.hex', () => {
 
 suite('sample: errors.hex', () => {
     let r: ReturnType<typeof parseIntelHex>;
-    setup(() => { r = parseIntelHex(load('errors.hex')); });
+    setup(() => { r = parseIntelHex(loadHex('errors.hex')); });
 
     test('detects exactly 2 checksum errors', () => {
         assert.strictEqual(r.checksumErrors, 2);
@@ -195,4 +196,3 @@ suite('sample: errors.hex', () => {
         assert.strictEqual(segBytes, validBytes);
     });
 });
-
