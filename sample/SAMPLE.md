@@ -197,7 +197,6 @@ sample/
 
 **Stats:** 1 segment · 3 bytes · 2 checksum errors · 1 malformed line
 **Use for:** Error detection in SREC; corrupt and malformed records are excluded from segments while valid records contribute normally.
-# HexScope Sample Files
 
 Test and demo files for the HexScope extension, organised by format.
 
