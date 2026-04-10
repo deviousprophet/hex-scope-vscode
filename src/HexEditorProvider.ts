@@ -267,9 +267,11 @@ function buildDataRecord(addr16: number, data: number[]): string {
     return ':' + body;
 }
 
-/** Detect whether raw content is Intel HEX or Motorola SREC. */
-function detectFormat(uri: vscode.Uri, raw: string): 'ihex' | 'srec' {
-    const ext = uri.path.split('.').pop()?.toLowerCase() ?? '';
+/**
+ * Pure format-detection logic, exposed for testing.
+ * Decides format from file extension and raw content.
+ */
+export function detectFormatFromParts(ext: string, raw: string): 'ihex' | 'srec' {
     if (['srec', 'mot', 's19', 's28', 's37'].includes(ext)) { return 'srec'; }
     // Content sniff: first non-empty line starts with 'S' followed by a digit
     const firstLine = raw.trimStart().slice(0, 4);
@@ -277,8 +279,13 @@ function detectFormat(uri: vscode.Uri, raw: string): 'ihex' | 'srec' {
     return 'ihex';
 }
 
+/** Detect whether raw content is Intel HEX or Motorola SREC. */
+function detectFormat(uri: vscode.Uri, raw: string): 'ihex' | 'srec' {
+    return detectFormatFromParts(uri.path.split('.').pop()?.toLowerCase() ?? '', raw);
+}
+
 /** Rebuild a Motorola SREC file from original parse + a map of addr→newValue overrides. */
-function serializeSRec(originalRaw: string, parseResult: ParseResult, edits: Map<number, number>): string {
+export function serializeSRec(originalRaw: string, parseResult: ParseResult, edits: Map<number, number>): string {
     if (edits.size === 0) { return originalRaw; }
 
     const eol = originalRaw.includes('\r\n') ? '\r\n' : '\n';
@@ -305,7 +312,7 @@ function serializeSRec(originalRaw: string, parseResult: ParseResult, edits: Map
     return lines.join(eol);
 }
 
-function buildSRecDataRecord(type: number, address: number, data: number[]): string {
+export function buildSRecDataRecord(type: number, address: number, data: number[]): string {
     const asz = SREC_ADDR_SIZES[type] ?? 2;
     const byteCount = asz + data.length + 1; // addrBytes + dataBytes + checksumByte
     let sum = byteCount;

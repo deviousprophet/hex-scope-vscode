@@ -8,19 +8,6 @@ import type { HexRecord, MemorySegment, ParseResult } from './types';
 
 // ── SREC record-type metadata ─────────────────────────────────────
 
-/** Display names for SREC record types (type digit 0–9). */
-export const SREC_TYPE_NAMES: Record<number, string> = {
-    0: 'Header',
-    1: 'Data (2B addr)',
-    2: 'Data (3B addr)',
-    3: 'Data (4B addr)',
-    5: 'Record Count',
-    6: 'Record Count (24b)',
-    7: 'End (S7)',
-    8: 'End (S8)',
-    9: 'End (S9)',
-};
-
 /**
  * Number of address bytes for each SREC record type.
  *   S0, S1, S5, S9 → 2-byte address
