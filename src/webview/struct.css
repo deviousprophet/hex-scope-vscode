@@ -1,0 +1,138 @@
+/* ── Struct Overlay sidebar panel ────────────────────────────── */
+
+/* Control rows */
+.struct-controls { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+
+.struct-row {
+    display: flex; align-items: center; gap: 6px;
+}
+.struct-preset-row { flex-wrap: nowrap; }
+
+.struct-lbl {
+    flex-shrink: 0; width: 46px;
+    font-size: 10px; color: var(--addr-fg); font-family: var(--font-ui);
+}
+
+.struct-addr-inp {
+    flex: 1; min-width: 0;
+    background: rgba(0,0,0,.25); border: 1px solid var(--border);
+    border-radius: 3px; color: var(--fg); font-family: var(--font-editor);
+    font-size: 11px; padding: 2px 6px; outline: none;
+}
+.struct-addr-inp:focus { border-color: var(--high-color); }
+
+.struct-sel {
+    flex: 1; min-width: 0;
+    background: rgba(0,0,0,.25); border: 1px solid var(--border);
+    border-radius: 3px; color: var(--fg); font-family: var(--font-ui);
+    font-size: 11px; padding: 2px 4px; outline: none;
+}
+.struct-sel:focus { border-color: var(--high-color); }
+
+.struct-btn-row {
+    display: flex; gap: 4px; flex-wrap: wrap;
+}
+
+.struct-btn {
+    border-radius: 3px; font-size: 10px; font-family: var(--font-ui); font-weight: 600;
+    padding: 2px 9px; cursor: pointer; white-space: nowrap;
+    transition: background .1s, border-color .1s;
+}
+.struct-btn-apply {
+    background: rgba(79,195,247,.12); border: 1px solid rgba(79,195,247,.4);
+    color: var(--high-color);
+}
+.struct-btn-apply:hover { background: rgba(79,195,247,.25); border-color: var(--high-color); }
+.struct-btn-secondary {
+    background: rgba(255,255,255,.06); border: 1px solid var(--border);
+    color: var(--addr-fg);
+}
+.struct-btn-secondary:hover { background: rgba(255,255,255,.12); border-color: var(--fg); }
+.struct-btn-danger {
+    background: rgba(244,135,113,.08); border: 1px solid rgba(244,135,113,.3);
+    color: var(--err);
+}
+.struct-btn-danger:hover { background: rgba(244,135,113,.2); border-color: var(--err); }
+
+/* ── Decode result ─────────────────────────────────────────── */
+#struct-decode-result { margin-top: 2px; }
+
+.struct-result-hdr {
+    display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+.struct-result-name {
+    font-size: 11px; font-weight: 700; color: var(--high-color); font-family: var(--font-ui);
+}
+.struct-result-meta {
+    font-size: 10px; color: var(--addr-fg); font-family: var(--font-ui);
+}
+.struct-result-empty {
+    font-size: 11px; font-style: italic; color: var(--non-graphic);
+    margin: 4px 0;
+}
+
+.struct-decode-tbl {
+    width: 100%; border-collapse: collapse; font-size: 10px; font-family: var(--font-editor);
+}
+.struct-decode-tbl tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); cursor: pointer; }
+.struct-decode-tbl tbody tr:hover { background: var(--hover-bg); }
+
+.sdf-off  { color: var(--addr-fg); padding: 2px 4px 2px 0; white-space: nowrap; }
+.sdf-name { color: var(--fg); padding: 2px 4px; max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sdf-type { color: var(--print-color); padding: 2px 4px; opacity: .75; white-space: nowrap; }
+.sdf-val  { color: var(--high-color); padding: 2px 0 2px 4px; word-break: break-all; }
+
+.struct-no-data td { opacity: .45; }
+
+/* ── Struct editor ─────────────────────────────────────────── */
+.struct-editor { display: flex; flex-direction: column; gap: 6px; }
+
+.struct-editor-btns { display: flex; gap: 6px; margin-top: 4px; }
+
+.struct-field-hdr {
+    display: grid;
+    grid-template-columns: 1fr 70px 28px 42px 18px;
+    gap: 3px; align-items: center;
+    font-size: 9px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--addr-fg); font-family: var(--font-ui);
+    padding-bottom: 3px; border-bottom: 1px solid var(--border);
+}
+.struct-field-hdr > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.struct-field-row {
+    display: grid;
+    grid-template-columns: 1fr 70px 28px 42px 18px;
+    gap: 3px; align-items: center;
+}
+
+.sfe-name-inp, .sfe-count-inp {
+    background: rgba(0,0,0,.25); border: 1px solid var(--border);
+    border-radius: 2px; color: var(--fg); font-family: var(--font-editor);
+    font-size: 10px; padding: 1px 4px; outline: none; width: 100%;
+    box-sizing: border-box;
+}
+.sfe-name-inp:focus, .sfe-count-inp:focus { border-color: var(--high-color); }
+
+.sfe-type-sel, .sfe-endian-sel {
+    background: rgba(0,0,0,.25); border: 1px solid var(--border);
+    border-radius: 2px; color: var(--fg); font-family: var(--font-ui);
+    font-size: 10px; padding: 1px 2px; outline: none; width: 100%;
+    box-sizing: border-box;
+}
+.sfe-type-sel:focus, .sfe-endian-sel:focus { border-color: var(--high-color); }
+
+.sfe-del-btn {
+    background: transparent; border: none; color: var(--addr-fg);
+    font-size: 10px; cursor: pointer; padding: 0; line-height: 1;
+    text-align: center;
+}
+.sfe-del-btn:hover { color: var(--err); }
+
+.struct-add-field-btn {
+    background: transparent; border: 1px dashed var(--border);
+    border-radius: 3px; color: var(--addr-fg); font-size: 10px;
+    font-family: var(--font-ui); padding: 3px 0; cursor: pointer;
+    transition: border-color .1s, color .1s; text-align: center;
+}
+.struct-add-field-btn:hover { border-color: var(--high-color); color: var(--high-color); }

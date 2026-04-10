@@ -7,6 +7,7 @@ import { esc, fmtB }                                  from './utils';
 import { rerender }                                   from './render';
 import { renderMemHeader, renderMemBody, applySel, scrollTo } from './memoryView';
 import { renderInspector, renderBits, renderLabels, updateInspector } from './sidebar';
+import { renderStructPanel, onSelectionChangeForStruct }              from './struct';
 import { initSearch, runSearch, clearSearch, nextMatch, prevMatch } from './search';
 import { initFlatBytes, buildMemRows }                from './data';
 
@@ -19,6 +20,7 @@ window.addEventListener('message', (e: MessageEvent) => {
             S.parseResult = msg.parseResult as typeof S.parseResult;
             S.labels      = (msg.labels as typeof S.labels) ?? [];
             S.rawSource   = (msg.rawSource as string) ?? '';
+            S.structs     = (msg.structs as typeof S.structs) ?? [];
             initFlatBytes();
             buildMemRows();
             // Choose default view: raw if there are errors, memory if valid
@@ -117,6 +119,7 @@ function render(): void {
                 <div class="sb-scroll">
                     <div class="sb-section" id="s-insp"></div>
                     <div class="sb-section" id="s-bits"></div>
+                    <div class="sb-section" id="s-struct"></div>
                     <div class="sb-section" id="s-labels"></div>
                 </div>
             </div>
@@ -227,6 +230,7 @@ function render(): void {
     renderMemHeader();
     renderInspector();
     renderBits();
+    renderStructPanel();
     renderLabels();
     setupCtxMenu();
 
@@ -278,6 +282,7 @@ function onByteDown(e: MouseEvent, el: HTMLElement): void {
 
     applySel();
     updateInspector();
+    onSelectionChangeForStruct();
 
 }
 
@@ -293,6 +298,7 @@ function onByteCtx(e: MouseEvent, el: HTMLElement): void {
             S.selEnd   = addr;
             applySel();
             updateInspector();
+            onSelectionChangeForStruct();
         }
     }
     showCtxMenu(e.clientX, e.clientY);

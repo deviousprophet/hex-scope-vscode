@@ -42,3 +42,26 @@ export type SearchMode = 'hex' | 'ascii' | 'addr';
 export type MemRow =
     | { type: 'data'; address: number }
     | { type: 'gap'; from: number; to: number; bytes: number };
+
+// ── Struct Overlay ────────────────────────────────────────────────
+
+export type StructFieldType =
+    | 'uint8' | 'uint16' | 'uint32'
+    | 'int8'  | 'int16'  | 'int32'
+    | 'float32' | 'float64';
+
+export type StructFieldEndian = 'le' | 'be' | 'inherit';
+
+export interface StructField {
+    name: string;
+    type: StructFieldType;
+    /** Array element count; 1 for a scalar field. */
+    count: number;
+    endian: StructFieldEndian;
+}
+
+export interface StructDef {
+    id: string;
+    name: string;
+    fields: StructField[];
+}

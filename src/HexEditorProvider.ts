@@ -55,10 +55,14 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
         const labelKey = `hexScope.labels.${document.uri.toString()}`;
         const storedLabels: SegmentLabel[] = this._context.workspaceState.get(labelKey, []);
 
+        // Load struct definitions from workspace state
+        const structKey = `hexScope.structs.${document.uri.toString()}`;
+
         const postInit = () => webviewPanel.webview.postMessage({
             type: 'init',
             parseResult: serializeParseResult(parseResult, format),
-            labels: this._context.workspaceState.get(labelKey, []),
+            labels:  this._context.workspaceState.get(labelKey, []),
+            structs: this._context.workspaceState.get(structKey, []),
             rawSource: raw,
         });
 
@@ -109,6 +113,10 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     break;
                 case 'saveLabels': {
                     await this._context.workspaceState.update(labelKey, msg.labels);
+                    break;
+                }
+                case 'saveStructs': {
+                    await this._context.workspaceState.update(structKey, msg.structs);
                     break;
                 }
                 case 'updateLabelVisibility': {
@@ -191,7 +199,7 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
         const cssFiles = [
             'base', 'toolbar', 'layout', 'sidebar',
-            'record-view', 'memory-view', 'raw-view', 'context-menu',
+            'record-view', 'memory-view', 'raw-view', 'context-menu', 'struct',
         ];
         const cssLinks = cssFiles.map(name => {
             const uri = webview.asWebviewUri(
