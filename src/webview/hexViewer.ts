@@ -223,7 +223,9 @@ function renderStats(): void {
     if (!el || !S.parseResult) { return; }
     const p = S.parseResult;
     const ok = p.checksumErrors === 0 && p.malformedLines === 0;
+    const fmtLabel = p.format === 'srec' ? 'SREC' : 'IHEX';
     el.innerHTML =
+        `<span class="si si-fmt"><span class="svl">${fmtLabel}</span></span>` +
         `<span class="si"><span class="slb">Bytes</span><span class="svl">${fmtB(p.totalDataBytes)}</span></span>` +
         `<span class="si"><span class="slb">Records</span><span class="svl">${p.records.length}</span></span>` +
         `<span class="si"><span class="slb">Segments</span><span class="svl">${p.segments.length}</span></span>` +
@@ -284,31 +286,41 @@ function selLen(): number {
 
 // ── Record view ───────────────────────────────────────────────────
 
-const REC_TYPE_LABELS: Record<number, string> = {
+const IHEX_TYPE_LABELS: Record<number, string> = {
     0: 'DATA', 1: 'EOF', 2: 'EXT SEG ADDR', 3: 'START SEG ADDR',
     4: 'EXT LIN ADDR', 5: 'START LIN ADDR',
+};
+
+const SREC_TYPE_LABELS: Record<number, string> = {
+    0: 'HEADER', 1: 'DATA S1', 2: 'DATA S2', 3: 'DATA S3',
+    5: 'COUNT', 6: 'COUNT S6', 7: 'END S7', 8: 'END S8', 9: 'END S9',
 };
 
 function renderRecordView(): void {
     const el = document.getElementById('record-view');
     if (!el || !S.parseResult) { return; }
 
+    const isSrec = S.parseResult.format === 'srec';
+    const TYPE_LABELS = isSrec ? SREC_TYPE_LABELS : IHEX_TYPE_LABELS;
+
     const header = `<tr><th>Addr</th><th>Type</th><th>Cnt</th><th>Data</th><th>CHK</th></tr>`;
 
     const rows = S.parseResult.records.map(r => {
+        const isData = isSrec ? (r.recordType === 1 || r.recordType === 2 || r.recordType === 3)
+                               : r.recordType === 0;
         const badge =
-            r.recordType === 4 ? 'rb-ext'   :
-            r.recordType === 5 ? 'rb-start' :
-            r.recordType === 1 ? 'rb-eof'   :
-            r.error            ? 'rb-bad'   : 'rb-data';
-
-        const lbl  = REC_TYPE_LABELS[r.recordType] ?? `TYPE ${r.recordType}`;
+            (!isSrec && (r.recordType === 4 || r.recordType === 2)) ? 'rb-ext'   :
+            (!isSrec && (r.recordType === 5 || r.recordType === 3)) ? 'rb-start' :
+            (!isSrec && r.recordType === 1)                         ? 'rb-eof'   :
+            (isSrec  && (r.recordType === 7 || r.recordType === 8 || r.recordType === 9)) ? 'rb-eof' :
+            (isSrec  && r.recordType === 0)                         ? 'rb-ext'   :
+            r.error                                                 ? 'rb-bad'   : 'rb-data';
+        const lbl = TYPE_LABELS[r.recordType] ?? (isSrec ? `S${r.recordType}` : `TYPE ${r.recordType}`);
         const ra   = r.resolvedAddress.toString(16).toUpperCase().padStart(8, '0');
         const data = r.data.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
         const chk  = r.checksumValid
             ? `<span class="cok">${r.checksum.toString(16).toUpperCase().padStart(2, '0')}</span>`
             : `<span class="cerr">${r.checksum.toString(16).toUpperCase().padStart(2, '0')}</span>`;
-        const isData   = r.recordType === 0;
         const gotoAttr = isData ? ` data-goto="${ra}"` : '';
         const addrCell = isData
             ? `<td class="raddr"${gotoAttr}>${ra}</td>`
@@ -341,16 +353,18 @@ function renderRawView(): void {
     const el = document.getElementById('raw-view');
     if (!el) { return; }
 
+    const isSrec = S.parseResult?.format === 'srec';
     const lines = S.rawSource.split(/\r?\n/);
     const rows = lines.map((line, i) => {
         const ln = String(i + 1).padStart(4, '\u00A0');
         if (!line.trim()) {
             return `<div class="raw-line"><span class="raw-ln">${ln}</span></div>`;
         }
+        if (isSrec) { return tokenizeSRecLine(ln, line); }
+        // Intel HEX tokenizer
         if (!line.startsWith(':') || line.length < 11) {
             return `<div class="raw-line raw-malformed"><span class="raw-ln">${ln}</span><span class="raw-text">${esc(line)}</span></div>`;
         }
-        // Tokenise: start + bytecount + addr + type + data + checksum
         const ll   = esc(line.slice(1, 3));
         const addr = esc(line.slice(3, 7));
         const tt   = esc(line.slice(7, 9));
@@ -375,6 +389,36 @@ function renderRawView(): void {
     }).join('');
 
     el.innerHTML = `<div class="raw-scroll"><code class="raw-code">${rows}</code></div>`;
+}
+
+/** Tokenize a single SREC raw line into colored spans. */
+function tokenizeSRecLine(ln: string, line: string): string {
+    if (!/^S[0-9]/i.test(line) || line.length < 4) {
+        return `<div class="raw-line raw-malformed"><span class="raw-ln">${ln}</span><span class="raw-text">${esc(line)}</span></div>`;
+    }
+    const typeChar = line[1];
+    const type = parseInt(typeChar, 10);
+    const aszMap: Record<number, number> = {0:2,1:2,2:3,3:4,5:2,6:3,7:4,8:3,9:2};
+    const aszChars = (aszMap[type] ?? 2) * 2; // hex chars for address
+    const bcHex   = esc(line.slice(2, 4));
+    const addrHex = esc(line.slice(4, 4 + aszChars));
+    const byteCount = parseInt(line.slice(2, 4), 16);
+    const dataEnd = 4 + aszChars + (byteCount - (aszChars / 2) - 1) * 2;
+    const dataHex = esc(line.slice(4 + aszChars, dataEnd));
+    const chkHex  = esc(line.slice(dataEnd));
+    const typeClass =
+        (type === 1 || type === 2 || type === 3) ? 'raw-t-data'  :
+        (type === 7 || type === 8 || type === 9) ? 'raw-t-eof'   :
+        type === 0                               ? 'raw-t-ela'   : 'raw-t-other';
+    return `<div class="raw-line">` +
+        `<span class="raw-ln">${ln}</span>` +
+        `<span class="raw-colon">S</span>` +
+        `<span class="raw-tt ${typeClass}">${esc(typeChar)}</span>` +
+        `<span class="raw-ll">${bcHex}</span>` +
+        `<span class="raw-addr">${addrHex}</span>` +
+        `<span class="raw-data">${dataHex}</span>` +
+        `<span class="raw-chk">${chkHex}</span>` +
+        `</div>`;
 }
 
 // ── View switching ────────────────────────────────────────────────
