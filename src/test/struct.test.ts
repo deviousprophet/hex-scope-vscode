@@ -2,7 +2,7 @@ import * as assert from 'assert';
 
 import {
     fieldByteSize, structByteSize, decodeField, decodeStruct,
-    allStructs, STRUCT_PRESETS, parseStructText, fieldsToText,
+    allStructs, parseStructText, fieldsToText,
 } from '../webview/struct-codec';
 import { S } from '../webview/state';
 import type { StructDef, StructField } from '../webview/types';
@@ -216,65 +216,26 @@ suite('decodeStruct()', () => {
 suite('allStructs()', () => {
     setup(() => resetStructState());
 
-    test('returns presets when no user structs', () => {
-        const all = allStructs();
-        assert.strictEqual(all.length, STRUCT_PRESETS.length);
+    test('returns empty array when no user structs', () => {
+        assert.strictEqual(allStructs().length, 0);
     });
 
-    test('user struct appended after presets', () => {
+    test('returns user structs in insertion order', () => {
+        const a: StructDef = { id: 'a', name: 'A', fields: [] };
+        const b: StructDef = { id: 'b', name: 'B', fields: [] };
+        S.structs = [a, b];
+        const all = allStructs();
+        assert.strictEqual(all.length, 2);
+        assert.strictEqual(all[0].id, 'a');
+        assert.strictEqual(all[1].id, 'b');
+    });
+
+    test('user struct appended when another already exists', () => {
         const custom: StructDef = { id: 'u1', name: 'Custom', fields: [] };
         S.structs = [custom];
         const all = allStructs();
-        assert.strictEqual(all.length, STRUCT_PRESETS.length + 1);
-        assert.strictEqual(all[all.length - 1].id, 'u1');
-    });
-
-    test('preset ids start with __preset_', () => {
-        for (const p of STRUCT_PRESETS) {
-            assert.ok(p.id.startsWith('__preset_'), `${p.id} does not start with __preset_`);
-        }
-    });
-});
-
-// ── STRUCT_PRESETS sanity ─────────────────────────────────────────
-
-suite('STRUCT_PRESETS', () => {
-    test('ARM Cortex-M Vector Table has 16 fields', () => {
-        const cm = STRUCT_PRESETS.find(p => p.id === '__preset_cm_vtable')!;
-        assert.ok(cm, 'preset not found');
-        assert.strictEqual(cm.fields.length, 16);
-    });
-
-    test('ARM Cortex-M Vector Table is 64 bytes total', () => {
-        const cm = STRUCT_PRESETS.find(p => p.id === '__preset_cm_vtable')!;
-        assert.strictEqual(structByteSize(cm), 64);
-    });
-
-    test('STM32 GPIO Port preset has 7 fields', () => {
-        const gp = STRUCT_PRESETS.find(p => p.id === '__preset_stm32_gpio')!;
-        assert.ok(gp, 'preset not found');
-        assert.strictEqual(gp.fields.length, 7);
-    });
-
-    test('STM32 GPIO Port preset is 28 bytes', () => {
-        const gp = STRUCT_PRESETS.find(p => p.id === '__preset_stm32_gpio')!;
-        assert.strictEqual(structByteSize(gp), 28);
-    });
-
-    test('all preset fields have a non-empty name', () => {
-        for (const p of STRUCT_PRESETS) {
-            for (const f of p.fields) {
-                assert.ok(f.name.trim().length > 0, `empty name in ${p.name}`);
-            }
-        }
-    });
-
-    test('all preset field counts are >= 1', () => {
-        for (const p of STRUCT_PRESETS) {
-            for (const f of p.fields) {
-                assert.ok(f.count >= 1, `count < 1 in ${p.name}.${f.name}`);
-            }
-        }
+        assert.strictEqual(all.length, 1);
+        assert.strictEqual(all[0].id, 'u1');
     });
 });
 

@@ -29,62 +29,6 @@ export function structByteSize(def: StructDef): number {
     return def.fields.reduce((s, f) => s + fieldByteSize(f.type) * f.count, 0);
 }
 
-// ── Built-in Presets ──────────────────────────────────────────────
-
-export const STRUCT_PRESETS: StructDef[] = [
-    {
-        id: '__preset_cm_vtable',
-        name: 'ARM Cortex-M Vector Table',
-        fields: [
-            { name: 'Initial SP',           type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'Reset_Handler',         type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'NMI_Handler',           type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'HardFault_Handler',     type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'MemManage_Handler',     type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'BusFault_Handler',      type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'UsageFault_Handler',    type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'Reserved[0]',           type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'Reserved[1]',           type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'Reserved[2]',           type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'Reserved[3]',           type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'SVC_Handler',           type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'DebugMon_Handler',      type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'Reserved[4]',           type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'PendSV_Handler',        type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'SysTick_Handler',       type: 'uint32', count: 1, endian: 'inherit' },
-        ],
-    },
-    {
-        id: '__preset_stm32_gpio',
-        name: 'STM32 GPIO Port',
-        fields: [
-            { name: 'CRL  (Config Low)',       type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'CRH  (Config High)',      type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'IDR  (Input Data)',       type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'ODR  (Output Data)',      type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'BSRR (Bit Set/Reset)',    type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'BRR  (Bit Reset)',        type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'LCKR (Lock)',             type: 'uint32', count: 1, endian: 'inherit' },
-        ],
-    },
-    {
-        id: '__preset_stm32_rcc',
-        name: 'STM32 RCC Registers',
-        fields: [
-            { name: 'CR       (Clock Ctrl)',   type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'CFGR     (Clock Cfg)',    type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'CIR      (Clock Intr)',   type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'APB2RSTR (APB2 Reset)',   type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'APB1RSTR (APB1 Reset)',   type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'AHBENR   (AHB Enable)',   type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'APB2ENR  (APB2 Enable)',  type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'APB1ENR  (APB1 Enable)',  type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'BDCR     (Backup Dom)',   type: 'uint32', count: 1, endian: 'inherit' },
-            { name: 'CSR      (Ctrl/Status)',  type: 'uint32', count: 1, endian: 'inherit' },
-        ],
-    },
-];
-
 // ── Decode logic ──────────────────────────────────────────────────
 
 export interface DecodedField {
@@ -160,7 +104,7 @@ export function decodeStruct(
 // ── All visible structs (presets + user-defined) ──────────────────
 
 export function allStructs(): StructDef[] {
-    return [...STRUCT_PRESETS, ...S.structs];
+    return [...S.structs];
 }
 
 // ── C struct text parser ──────────────────────────────────────────

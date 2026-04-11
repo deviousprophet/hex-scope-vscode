@@ -7,7 +7,7 @@ import { esc }     from './utils';
 import { vscode }  from './api';
 import { rerender } from './render';
 import {
-    FIELD_TYPES, STRUCT_PRESETS,
+    FIELD_TYPES,
     fieldByteSize, structByteSize, decodeStruct, allStructs,
     parseStructText, fieldsToText,
 } from './struct-codec.js';
@@ -15,7 +15,7 @@ import type { StructDef, StructFieldType, StructFieldEndian, StructPin } from '.
 
 // Re-export codec symbols so callers can import from a single path.
 export {
-    FIELD_TYPES, STRUCT_PRESETS, TYPE_TO_C,
+    FIELD_TYPES, TYPE_TO_C,
     fieldByteSize, structByteSize, decodeStruct, allStructs,
     parseStructText, fieldsToText,
 } from './struct-codec.js';
@@ -75,8 +75,14 @@ export function renderStructPanel(): void {
               `<button id="struct-btn-del"  class="struct-btn struct-btn-icon struct-btn-icon-danger" title="Delete struct definition">✕</button>`
             : '') +
         `</div>` +
-        // New struct always available
-        `<button id="struct-btn-new" class="struct-add-field-btn">+ New Struct</button>` +
+        // Endian toggle + New struct on the same row
+        `<div class="struct-row" style="justify-content:space-between">` +
+        `<div class="endian-tabs struct-endian-tabs">` +
+        `<button id="struct-btn-le" class="${S.endian === 'le' ? 'active' : ''}">LE</button>` +
+        `<button id="struct-btn-be" class="${S.endian === 'be' ? 'active' : ''}">BE</button>` +
+        `</div>` +
+        `<button id="struct-btn-new" class="struct-btn struct-btn-secondary" style="font-size:10px">+ New Struct</button>` +
+        `</div>` +
         `</div>` +
         `<div id="struct-decode-result"></div>`;
 
@@ -86,6 +92,19 @@ export function renderStructPanel(): void {
     addrInp.addEventListener('change', () => {
         const v = parseInt(addrInp.value.replace(/^0x/i, ''), 16);
         S.activeStructAddr = isNaN(v) ? null : v;
+        renderDecodeResult();
+    });
+
+    document.getElementById('struct-btn-le')!.addEventListener('click', () => {
+        S.endian = 'le';
+        document.getElementById('struct-btn-le')!.classList.add('active');
+        document.getElementById('struct-btn-be')!.classList.remove('active');
+        renderDecodeResult();
+    });
+    document.getElementById('struct-btn-be')!.addEventListener('click', () => {
+        S.endian = 'be';
+        document.getElementById('struct-btn-be')!.classList.add('active');
+        document.getElementById('struct-btn-le')!.classList.remove('active');
         renderDecodeResult();
     });
 
@@ -205,7 +224,7 @@ export function renderStructEditor(existing: StructDef | null, mode: 'form' | 't
     // draft.fields is the shared source of truth between both modes
     const draft: StructDef = existing
         ? { id: draftId, name: existing.name, fields: existing.fields.map(f => ({ ...f })) }
-        : { id: draftId, name: 'MyStruct', fields: [] };
+        : { id: draftId, name: 'MyStruct', fields: [{ name: 'field0', type: 'uint32', count: 1, endian: 'inherit' }] };
 
     const renderIt = (m: 'form' | 'text') => renderStructEditor_inner(sec, draft, existing, m);
     renderIt(mode);
@@ -218,10 +237,6 @@ function renderStructEditor_inner(
     mode: 'form' | 'text',
 ): void {
     const isForm = mode === 'form';
-
-    const presetOpts = STRUCT_PRESETS.map(p =>
-        `<option value="${esc(p.id)}">${esc(p.name)}</option>`
-    ).join('');
 
     // ── Visual form helpers ───────────────────────────────────────
     const fieldRow = (f: import('./types').StructField, i: number): string => {
@@ -283,16 +298,6 @@ function renderStructEditor_inner(
     sec.innerHTML =
         `<div class="sb-hdr">${existing ? 'Edit Struct' : 'New Struct'}</div>` +
         `<div class="struct-editor">` +
-        // Preset row (new only)
-        (!existing
-            ? `<div class="struct-row struct-preset-row">` +
-              `<label class="struct-lbl">Preset</label>` +
-              `<select id="struct-preset-sel" class="struct-sel">` +
-              `<option value="">— blank —</option>${presetOpts}` +
-              `</select>` +
-              `<button id="struct-load-preset" class="struct-btn struct-btn-secondary">Load</button>` +
-              `</div>`
-            : '') +
         // Name + mode toggle on the same row
         `<div class="struct-row">` +
         `<input id="struct-name-inp" class="struct-addr-inp" type="text" value="${esc(draft.name)}" ` +
@@ -329,17 +334,7 @@ function renderStructEditor_inner(
         renderStructEditor_inner(sec, draft, existing, 'text');
     });
 
-    // ── Wire preset loader ───────────────────────────────────────
-    document.getElementById('struct-load-preset')?.addEventListener('click', () => {
-        const pId = (document.getElementById('struct-preset-sel') as HTMLSelectElement).value;
-        const preset = STRUCT_PRESETS.find(p => p.id === pId);
-        if (!preset) { return; }
-        draft.name   = preset.name;
-        draft.fields = preset.fields.map(f => ({ ...f }));
-        renderStructEditor_inner(sec, draft, existing, mode);
-    });
-
-    // ── Form mode wiring ─────────────────────────────────────────
+    // ── Wire form mode toggle ─────────────────────────────────────────
     if (isForm) {
         document.getElementById('struct-add-field')?.addEventListener('click', () => {
             syncDraftFromForm();
