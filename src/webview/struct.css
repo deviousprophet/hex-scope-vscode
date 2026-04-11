@@ -145,7 +145,7 @@
 /* ── Visual form ─────────────────────────────────────────── */
 .struct-field-hdr {
     display: grid;
-    grid-template-columns: 64px 1fr 72px 46px 18px;
+    grid-template-columns: 64px 1fr 72px 18px;
     gap: 3px; align-items: center;
     font-size: 9px; font-weight: 700; text-transform: uppercase;
     letter-spacing: .04em; color: var(--addr-fg); font-family: var(--font-ui);
@@ -155,7 +155,7 @@
 
 .struct-field-row {
     display: grid;
-    grid-template-columns: 64px 1fr 72px 46px 18px;
+    grid-template-columns: 64px 1fr 72px 18px;
     gap: 3px; align-items: center;
 }
 
@@ -167,13 +167,13 @@
 }
 .sfe-name-inp:focus { border-color: var(--focus-bdr); }
 
-.sfe-type-sel, .sfe-endian-sel {
+.sfe-type-sel {
     background: var(--input-bg); border: 1px solid var(--input-bdr);
     border-radius: 2px; color: var(--input-fg); font-family: var(--font-ui);
     font-size: 10px; padding: 1px 2px; outline: none; width: 100%;
     box-sizing: border-box;
 }
-.sfe-type-sel:focus, .sfe-endian-sel:focus { border-color: var(--focus-bdr); }
+.sfe-type-sel:focus { border-color: var(--focus-bdr); }
 
 /* ── Array cell ──────────────────────────────────────────── */
 .sfe-arr-cell {
@@ -203,8 +203,13 @@
 .sfe-count-inp::-webkit-outer-spin-button,
 .sfe-count-inp::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .sfe-count-inp:focus { border-color: var(--focus-bdr); }
-/* Array mode: hide toggle, show brackets + input */
-.sfe-arr-cell.is-array .sfe-arr-toggle { display: none; }
+/* Array mode: toggle shrinks to compact ✕, brackets + input appear */
+.sfe-arr-cell.is-array .sfe-arr-toggle {
+    width: auto; flex-shrink: 0; border-style: solid;
+    padding: 1px 4px; font-size: 9px;
+    border-color: var(--border); color: var(--addr-fg);
+}
+.sfe-arr-cell.is-array .sfe-arr-toggle:hover { border-color: var(--err); color: var(--err); }
 .sfe-arr-cell.is-array .sfe-arr-brace  { display: block; }
 .sfe-arr-cell.is-array .sfe-count-inp  { display: block; }
 

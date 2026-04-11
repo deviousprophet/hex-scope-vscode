@@ -11,7 +11,7 @@ import {
     fieldByteSize, structByteSize, decodeStruct, allStructs,
     parseStructText, fieldsToText,
 } from './struct-codec.js';
-import type { StructDef, StructFieldType, StructFieldEndian, StructPin } from './types';
+import type { StructDef, StructFieldType, StructPin } from './types';
 
 // Re-export codec symbols so callers can import from a single path.
 export {
@@ -243,20 +243,16 @@ function renderStructEditor_inner(
         const typeOpts = FIELD_TYPES.map(t =>
             `<option value="${t}" ${f.type === t ? 'selected' : ''}>${t}</option>`
         ).join('');
-        const endianOpts = (['inherit', 'le', 'be'] as StructFieldEndian[]).map(e =>
-            `<option value="${e}" ${f.endian === e ? 'selected' : ''}>${e}</option>`
-        ).join('');
         const isArr = f.count > 1;
         return `<div class="struct-field-row" data-idx="${i}">` +
             `<select class="sfe-type-sel">${typeOpts}</select>` +
             `<input class="sfe-name-inp" type="text" value="${esc(f.name)}" maxlength="64" placeholder="fieldName">` +
             `<div class="sfe-arr-cell${isArr ? ' is-array' : ''}">` +
-            `<button class="sfe-arr-toggle" title="Make array">[ ]</button>` +
+            `<button class="sfe-arr-toggle" title="${isArr ? 'Remove array' : 'Make array'}">${isArr ? '✕' : '[ ]'}</button>` +
             `<span class="sfe-arr-brace">[</span>` +
             `<input class="sfe-count-inp" type="text" inputmode="numeric" value="${isArr ? f.count : ''}" placeholder="N" maxlength="3">` +
             `<span class="sfe-arr-brace">]</span>` +
             `</div>` +
-            `<select class="sfe-endian-sel">${endianOpts}</select>` +
             `<button class="sfe-del-btn" title="Remove field">✕</button>` +
             `</div>`;
     };
@@ -273,7 +269,7 @@ function renderStructEditor_inner(
                 const v = parseInt((row.querySelector('.sfe-count-inp') as HTMLInputElement).value);
                 return isNaN(v) || v < 1 ? 1 : Math.min(v, 256);
             })(),
-            endian: (row.querySelector('.sfe-endian-sel') as HTMLSelectElement).value  as StructFieldEndian,
+            endian: 'inherit',
         }));
     };
 
@@ -291,7 +287,7 @@ function renderStructEditor_inner(
     const formBody   =
         `<div id="struct-fields">` +
         `<div class="struct-field-hdr">` +
-        `<span>Type</span><span>Name</span><span>[ ]</span><span>End.</span><span></span>` +
+        `<span>Type</span><span>Name</span><span>[ ]</span><span></span>` +
         `</div>` +
         (fieldRows || `<div class="sb-empty" style="padding:4px 0">No fields yet</div>`) +
         `</div>` +
@@ -363,12 +359,14 @@ function renderStructEditor_inner(
             });
         });
 
-        // Array toggle
+        // Array toggle (on = show [N], off = revert to scalar)
         sec.querySelectorAll<HTMLElement>('.sfe-arr-toggle').forEach(btn => {
             btn.addEventListener('click', () => {
                 const cell = btn.closest<HTMLElement>('.sfe-arr-cell')!;
                 const nowArr = !cell.classList.contains('is-array');
                 cell.classList.toggle('is-array', nowArr);
+                btn.textContent = nowArr ? '✕' : '[ ]';
+                btn.title       = nowArr ? 'Remove array' : 'Make array';
                 if (nowArr) {
                     const inp = cell.querySelector<HTMLInputElement>('.sfe-count-inp')!;
                     if (!inp.value) { inp.value = '2'; }
