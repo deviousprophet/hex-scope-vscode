@@ -1,5 +1,8 @@
 /* ── Struct Overlay sidebar panel ────────────────────────────── */
 
+/* Endian toggle in struct panel — compact, left-aligned */
+.struct-endian-tabs { flex-shrink: 0; }
+
 /* Control rows */
 .struct-controls { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 
@@ -142,7 +145,7 @@
 /* ── Visual form ─────────────────────────────────────────── */
 .struct-field-hdr {
     display: grid;
-    grid-template-columns: 1fr 70px 30px 46px 18px;
+    grid-template-columns: 64px 1fr 72px 46px 18px;
     gap: 3px; align-items: center;
     font-size: 9px; font-weight: 700; text-transform: uppercase;
     letter-spacing: .04em; color: var(--addr-fg); font-family: var(--font-ui);
@@ -152,17 +155,17 @@
 
 .struct-field-row {
     display: grid;
-    grid-template-columns: 1fr 70px 30px 46px 18px;
+    grid-template-columns: 64px 1fr 72px 46px 18px;
     gap: 3px; align-items: center;
 }
 
-.sfe-name-inp, .sfe-count-inp {
+.sfe-name-inp {
     background: rgba(0,0,0,.25); border: 1px solid var(--border);
     border-radius: 2px; color: var(--fg); font-family: var(--font-editor);
     font-size: 10px; padding: 1px 4px; outline: none; width: 100%;
     box-sizing: border-box;
 }
-.sfe-name-inp:focus, .sfe-count-inp:focus { border-color: var(--focus-bdr); }
+.sfe-name-inp:focus { border-color: var(--focus-bdr); }
 
 .sfe-type-sel, .sfe-endian-sel {
     background: var(--input-bg); border: 1px solid var(--input-bdr);
@@ -171,6 +174,39 @@
     box-sizing: border-box;
 }
 .sfe-type-sel:focus, .sfe-endian-sel:focus { border-color: var(--focus-bdr); }
+
+/* ── Array cell ──────────────────────────────────────────── */
+.sfe-arr-cell {
+    display: flex; align-items: center; gap: 1px; width: 100%;
+}
+/* Scalar mode: show toggle button, hide brackets + input */
+.sfe-arr-toggle {
+    background: transparent; border: 1px dashed var(--border);
+    border-radius: 2px; color: var(--addr-fg); font-family: var(--font-editor);
+    font-size: 9px; cursor: pointer; padding: 1px 3px; line-height: 1.4;
+    white-space: nowrap; width: 100%; text-align: center;
+    transition: border-color .1s, color .1s;
+}
+.sfe-arr-toggle:hover { border-color: var(--high-color); color: var(--high-color); }
+.sfe-arr-brace {
+    display: none; color: var(--addr-fg); font-family: var(--font-editor);
+    font-size: 11px; line-height: 1; flex-shrink: 0;
+}
+.sfe-count-inp {
+    display: none; width: 28px; text-align: center;
+    background: rgba(0,0,0,.25); border: 1px solid var(--border);
+    border-radius: 2px; color: var(--fg); font-family: var(--font-editor);
+    font-size: 10px; padding: 1px 2px; outline: none; box-sizing: border-box;
+    /* hide number spinners */
+    -moz-appearance: textfield;
+}
+.sfe-count-inp::-webkit-outer-spin-button,
+.sfe-count-inp::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.sfe-count-inp:focus { border-color: var(--focus-bdr); }
+/* Array mode: hide toggle, show brackets + input */
+.sfe-arr-cell.is-array .sfe-arr-toggle { display: none; }
+.sfe-arr-cell.is-array .sfe-arr-brace  { display: block; }
+.sfe-arr-cell.is-array .sfe-count-inp  { display: block; }
 
 .sfe-del-btn {
     background: transparent; border: none; color: var(--addr-fg);
