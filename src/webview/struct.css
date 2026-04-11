@@ -177,41 +177,32 @@
 
 /* ── Array cell ──────────────────────────────────────────── */
 .sfe-arr-cell {
-    display: flex; align-items: center; gap: 1px; width: 100%;
+    display: flex; align-items: center; gap: 2px; width: 100%;
 }
-/* Scalar mode: show toggle button, hide brackets + input */
 .sfe-arr-toggle {
     background: transparent; border: 1px dashed var(--border);
     border-radius: 2px; color: var(--addr-fg); font-family: var(--font-editor);
     font-size: 9px; cursor: pointer; padding: 1px 3px; line-height: 1.4;
-    white-space: nowrap; width: 100%; text-align: center;
-    transition: border-color .1s, color .1s;
+    white-space: nowrap; flex-shrink: 0; text-align: center;
+    transition: border-color .1s, color .1s, background .1s;
 }
-.sfe-arr-toggle:hover { border-color: var(--high-color); color: var(--high-color); }
-.sfe-arr-brace {
-    display: none; color: var(--addr-fg); font-family: var(--font-editor);
-    font-size: 11px; line-height: 1; flex-shrink: 0;
-}
+.sfe-arr-toggle:hover          { border-color: var(--high-color); color: var(--high-color); }
+.sfe-arr-toggle.active         { border-style: solid; border-color: var(--high-color);
+                                  color: var(--high-color); background: rgba(79,195,247,.1); }
+.sfe-arr-toggle.active:hover   { border-color: var(--err); color: var(--err);
+                                  background: rgba(255,80,80,.08); }
 .sfe-count-inp {
-    display: none; width: 28px; text-align: center;
+    display: none; width: 32px; text-align: center;
     background: rgba(0,0,0,.25); border: 1px solid var(--border);
     border-radius: 2px; color: var(--fg); font-family: var(--font-editor);
     font-size: 10px; padding: 1px 2px; outline: none; box-sizing: border-box;
-    /* hide number spinners */
     -moz-appearance: textfield;
 }
 .sfe-count-inp::-webkit-outer-spin-button,
 .sfe-count-inp::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .sfe-count-inp:focus { border-color: var(--focus-bdr); }
-/* Array mode: toggle shrinks to compact ✕, brackets + input appear */
-.sfe-arr-cell.is-array .sfe-arr-toggle {
-    width: auto; flex-shrink: 0; border-style: solid;
-    padding: 1px 4px; font-size: 9px;
-    border-color: var(--border); color: var(--addr-fg);
-}
-.sfe-arr-cell.is-array .sfe-arr-toggle:hover { border-color: var(--err); color: var(--err); }
-.sfe-arr-cell.is-array .sfe-arr-brace  { display: block; }
-.sfe-arr-cell.is-array .sfe-count-inp  { display: block; }
+/* Array mode: show the size input */
+.sfe-arr-cell.is-array .sfe-count-inp { display: block; }
 
 .sfe-del-btn {
     background: transparent; border: none; color: var(--addr-fg);

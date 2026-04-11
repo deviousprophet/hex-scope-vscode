@@ -248,10 +248,8 @@ function renderStructEditor_inner(
             `<select class="sfe-type-sel">${typeOpts}</select>` +
             `<input class="sfe-name-inp" type="text" value="${esc(f.name)}" maxlength="64" placeholder="fieldName">` +
             `<div class="sfe-arr-cell${isArr ? ' is-array' : ''}">` +
-            `<button class="sfe-arr-toggle" title="${isArr ? 'Remove array' : 'Make array'}">${isArr ? '✕' : '[ ]'}</button>` +
-            `<span class="sfe-arr-brace">[</span>` +
+            `<button class="sfe-arr-toggle${isArr ? ' active' : ''}" title="${isArr ? 'Remove array' : 'Make array'}">[ ]</button>` +
             `<input class="sfe-count-inp" type="text" inputmode="numeric" value="${isArr ? f.count : ''}" placeholder="N" maxlength="3">` +
-            `<span class="sfe-arr-brace">]</span>` +
             `</div>` +
             `<button class="sfe-del-btn" title="Remove field">✕</button>` +
             `</div>`;
@@ -359,14 +357,14 @@ function renderStructEditor_inner(
             });
         });
 
-        // Array toggle (on = show [N], off = revert to scalar)
+        // Array toggle (on/off — [ ] always visible, active state when array)
         sec.querySelectorAll<HTMLElement>('.sfe-arr-toggle').forEach(btn => {
             btn.addEventListener('click', () => {
                 const cell = btn.closest<HTMLElement>('.sfe-arr-cell')!;
                 const nowArr = !cell.classList.contains('is-array');
                 cell.classList.toggle('is-array', nowArr);
-                btn.textContent = nowArr ? '✕' : '[ ]';
-                btn.title       = nowArr ? 'Remove array' : 'Make array';
+                btn.classList.toggle('active', nowArr);
+                btn.title = nowArr ? 'Remove array' : 'Make array';
                 if (nowArr) {
                     const inp = cell.querySelector<HTMLInputElement>('.sfe-count-inp')!;
                     if (!inp.value) { inp.value = '2'; }
