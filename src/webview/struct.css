@@ -124,9 +124,25 @@
 
 .struct-editor-btns { display: flex; gap: 6px; margin-top: 4px; }
 
+/* Mode toggle (Form / Text) — two-button segmented control */
+.struct-mode-toggle {
+    display: flex; flex-shrink: 0;
+    border: 1px solid var(--border); border-radius: 3px; overflow: hidden;
+}
+.smt-btn {
+    padding: 2px 8px; font-size: 10px; font-family: var(--font-ui); font-weight: 600;
+    background: transparent; border: none; color: var(--addr-fg);
+    cursor: pointer; transition: background .1s, color .1s;
+    white-space: nowrap;
+}
+.smt-btn + .smt-btn { border-left: 1px solid var(--border); }
+.smt-btn.active { background: rgba(79,195,247,.15); color: var(--high-color); }
+.smt-btn:not(.active):hover { background: rgba(255,255,255,.07); color: var(--fg); }
+
+/* ── Visual form ─────────────────────────────────────────── */
 .struct-field-hdr {
     display: grid;
-    grid-template-columns: 1fr 70px 28px 42px 18px;
+    grid-template-columns: 1fr 70px 30px 46px 18px;
     gap: 3px; align-items: center;
     font-size: 9px; font-weight: 700; text-transform: uppercase;
     letter-spacing: .04em; color: var(--addr-fg); font-family: var(--font-ui);
@@ -136,7 +152,7 @@
 
 .struct-field-row {
     display: grid;
-    grid-template-columns: 1fr 70px 28px 42px 18px;
+    grid-template-columns: 1fr 70px 30px 46px 18px;
     gap: 3px; align-items: center;
 }
 
@@ -146,7 +162,7 @@
     font-size: 10px; padding: 1px 4px; outline: none; width: 100%;
     box-sizing: border-box;
 }
-.sfe-name-inp:focus, .sfe-count-inp:focus { border-color: var(--high-color); }
+.sfe-name-inp:focus, .sfe-count-inp:focus { border-color: var(--focus-bdr); }
 
 .sfe-type-sel, .sfe-endian-sel {
     background: var(--input-bg); border: 1px solid var(--input-bdr);
@@ -170,6 +186,33 @@
     transition: border-color .1s, color .1s; text-align: center;
 }
 .struct-add-field-btn:hover { border-color: var(--high-color); color: var(--high-color); }
+
+/* ── C-syntax textarea ───────────────────────────────────── */
+.struct-text-inp {
+    width: 100%; min-height: 130px; resize: vertical;
+    background: var(--input-bg); border: 1px solid var(--input-bdr);
+    border-radius: 3px; color: var(--input-fg);
+    font-family: var(--font-editor); font-size: 11px;
+    line-height: 1.55; padding: 6px 8px; outline: none;
+    tab-size: 4; box-sizing: border-box;
+}
+.struct-text-inp:focus { border-color: var(--focus-bdr); }
+
+/* Live parse status line */
+.struct-parse-status { min-height: 16px; font-size: 10px; font-family: var(--font-ui); }
+.struct-parse-ok   { color: var(--ok); }
+.struct-parse-err  { color: var(--err); }
+.struct-parse-hint { color: var(--non-graphic); font-style: italic; }
+
+/* Type cheat-sheet hint below textarea */
+.struct-text-hint {
+    font-size: 9px; color: var(--non-graphic); font-family: var(--font-ui);
+    line-height: 1.4;
+}
+.hint-code {
+    font-family: var(--font-editor); font-size: 9px;
+    background: rgba(255,255,255,.06); border-radius: 2px; padding: 0 3px;
+}
 
 /* ── Saved overlay pins list ──────────────────────────────────── */
 .struct-pin-item {

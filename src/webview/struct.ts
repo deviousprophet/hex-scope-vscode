@@ -9,15 +9,17 @@ import { rerender } from './render';
 import {
     FIELD_TYPES, STRUCT_PRESETS,
     fieldByteSize, structByteSize, decodeStruct, allStructs,
+    parseStructText, fieldsToText,
 } from './struct-codec.js';
 import type { StructDef, StructFieldType, StructFieldEndian, StructPin } from './types';
 
 // Re-export codec symbols so callers can import from a single path.
 export {
-    FIELD_TYPES, STRUCT_PRESETS,
+    FIELD_TYPES, STRUCT_PRESETS, TYPE_TO_C,
     fieldByteSize, structByteSize, decodeStruct, allStructs,
+    parseStructText, fieldsToText,
 } from './struct-codec.js';
-export type { DecodedField } from './struct-codec.js';
+export type { DecodedField, ParseStructTextResult } from './struct-codec.js';
 
 // ── Sidebar panel render ──────────────────────────────────────────
 
@@ -195,14 +197,33 @@ function renderDecodeResult(): void {
 // ── Struct Editor ─────────────────────────────────────────────────
 
 /** Render the inline struct editor. Pass null to create a new struct. */
-export function renderStructEditor(existing: StructDef | null): void {
+export function renderStructEditor(existing: StructDef | null, mode: 'form' | 'text' = 'form'): void {
     const sec = document.getElementById('s-struct');
     if (!sec) { return; }
 
+    const draftId = existing?.id ?? `user_${Date.now()}`;
+    // draft.fields is the shared source of truth between both modes
     const draft: StructDef = existing
-        ? { id: existing.id, name: existing.name, fields: existing.fields.map(f => ({ ...f })) }
-        : { id: `user_${Date.now()}`, name: 'MyStruct', fields: [] };
+        ? { id: draftId, name: existing.name, fields: existing.fields.map(f => ({ ...f })) }
+        : { id: draftId, name: 'MyStruct', fields: [] };
 
+    const renderIt = (m: 'form' | 'text') => renderStructEditor_inner(sec, draft, existing, m);
+    renderIt(mode);
+}
+
+function renderStructEditor_inner(
+    sec: HTMLElement,
+    draft: StructDef,
+    existing: StructDef | null,
+    mode: 'form' | 'text',
+): void {
+    const isForm = mode === 'form';
+
+    const presetOpts = STRUCT_PRESETS.map(p =>
+        `<option value="${esc(p.id)}">${esc(p.name)}</option>`
+    ).join('');
+
+    // ── Visual form helpers ───────────────────────────────────────
     const fieldRow = (f: import('./types').StructField, i: number): string => {
         const typeOpts = FIELD_TYPES.map(t =>
             `<option value="${t}" ${f.type === t ? 'selected' : ''}>${t}</option>`
@@ -219,9 +240,9 @@ export function renderStructEditor(existing: StructDef | null): void {
             `</div>`;
     };
 
-    const syncDraftFromDOM = () => {
+    const syncDraftFromForm = () => {
         draft.name = (document.getElementById('struct-name-inp') as HTMLInputElement)?.value ?? draft.name;
-        const rows = document.querySelectorAll<HTMLElement>('#struct-fields .struct-field-row');
+        const rows = sec.querySelectorAll<HTMLElement>('.struct-field-row');
         draft.fields = Array.from(rows).map(row => ({
             name:   (row.querySelector('.sfe-name-inp')   as HTMLInputElement).value   || 'field',
             type:   (row.querySelector('.sfe-type-sel')   as HTMLSelectElement).value  as StructFieldType,
@@ -230,96 +251,177 @@ export function renderStructEditor(existing: StructDef | null): void {
         }));
     };
 
-    const wireEditorEvents = () => {
-        document.getElementById('struct-load-preset')?.addEventListener('click', () => {
-            const pId = (document.getElementById('struct-preset-sel') as HTMLSelectElement).value;
-            const preset = STRUCT_PRESETS.find(p => p.id === pId);
-            if (preset) {
-                draft.name   = preset.name;
-                draft.fields = preset.fields.map(f => ({ ...f }));
-                renderIt();
-            }
-        });
+    const syncDraftFromText = () => {
+        const ta = document.getElementById('struct-text-inp') as HTMLTextAreaElement | null;
+        if (!ta) { return; }
+        const nameInp = document.getElementById('struct-name-inp') as HTMLInputElement | null;
+        if (nameInp) { draft.name = nameInp.value || draft.name; }
+        const { fields } = parseStructText(ta.value);
+        if (fields.length > 0) { draft.fields = fields; }
+    };
 
+    // ── Build HTML ────────────────────────────────────────────────
+    const fieldRows  = draft.fields.map((f, i) => fieldRow(f, i)).join('');
+    const formBody   =
+        `<div id="struct-fields">` +
+        `<div class="struct-field-hdr">` +
+        `<span>Field Name</span><span>Type</span><span>×</span><span>End.</span><span></span>` +
+        `</div>` +
+        (fieldRows || `<div class="sb-empty" style="padding:4px 0">No fields yet</div>`) +
+        `</div>` +
+        `<button id="struct-add-field" class="struct-add-field-btn">+ Add Field</button>`;
+
+    const textBody   =
+        `<textarea id="struct-text-inp" class="struct-text-inp" spellcheck="false" ` +
+               `placeholder="uint32_t field_name;\nuint8_t  buffer[16];\nfloat    value;    // be"></textarea>` +
+        `<div id="struct-parse-status" class="struct-parse-status"></div>` +
+        `<div class="struct-text-hint">` +
+        `uint8/16/32_t · int8/16/32_t · float · double · unsigned/signed · arr[N]` +
+        ` · <span class="hint-code">// be</span> or <span class="hint-code">// le</span>` +
+        `</div>`;
+
+    sec.innerHTML =
+        `<div class="sb-hdr">${existing ? 'Edit Struct' : 'New Struct'}</div>` +
+        `<div class="struct-editor">` +
+        // Preset row (new only)
+        (!existing
+            ? `<div class="struct-row struct-preset-row">` +
+              `<label class="struct-lbl">Preset</label>` +
+              `<select id="struct-preset-sel" class="struct-sel">` +
+              `<option value="">— blank —</option>${presetOpts}` +
+              `</select>` +
+              `<button id="struct-load-preset" class="struct-btn struct-btn-secondary">Load</button>` +
+              `</div>`
+            : '') +
+        // Name + mode toggle on the same row
+        `<div class="struct-row">` +
+        `<input id="struct-name-inp" class="struct-addr-inp" type="text" value="${esc(draft.name)}" ` +
+               `maxlength="64" placeholder="StructName" style="flex:1">` +
+        `<div class="struct-mode-toggle">` +
+        `<button class="smt-btn${isForm ? ' active' : ''}" id="smt-form" title="Visual editor">≡ Form</button>` +
+        `<button class="smt-btn${!isForm ? ' active' : ''}" id="smt-text" title="C syntax editor">&lt;/&gt; Text</button>` +
+        `</div>` +
+        `</div>` +
+        // Editor body
+        (isForm ? formBody : textBody) +
+        // Action buttons
+        `<div class="struct-editor-btns">` +
+        `<button id="struct-save"   class="struct-btn struct-btn-apply">Save</button>` +
+        `<button id="struct-cancel" class="struct-btn struct-btn-secondary">Cancel</button>` +
+        `</div>` +
+        `</div>`;
+
+    // ── Wire mode toggle ─────────────────────────────────────────
+    const nameInp = document.getElementById('struct-name-inp') as HTMLInputElement;
+
+    document.getElementById('smt-form')!.addEventListener('click', () => {
+        if (!isForm) {
+            syncDraftFromText();
+            draft.name = nameInp.value || draft.name;
+        }
+        renderStructEditor_inner(sec, draft, existing, 'form');
+    });
+    document.getElementById('smt-text')!.addEventListener('click', () => {
+        if (isForm) {
+            syncDraftFromForm();
+            draft.name = nameInp.value || draft.name;
+        }
+        renderStructEditor_inner(sec, draft, existing, 'text');
+    });
+
+    // ── Wire preset loader ───────────────────────────────────────
+    document.getElementById('struct-load-preset')?.addEventListener('click', () => {
+        const pId = (document.getElementById('struct-preset-sel') as HTMLSelectElement).value;
+        const preset = STRUCT_PRESETS.find(p => p.id === pId);
+        if (!preset) { return; }
+        draft.name   = preset.name;
+        draft.fields = preset.fields.map(f => ({ ...f }));
+        renderStructEditor_inner(sec, draft, existing, mode);
+    });
+
+    // ── Form mode wiring ─────────────────────────────────────────
+    if (isForm) {
         document.getElementById('struct-add-field')?.addEventListener('click', () => {
-            syncDraftFromDOM();
+            syncDraftFromForm();
             draft.fields.push({ name: `field${draft.fields.length}`, type: 'uint8', count: 1, endian: 'inherit' });
-            renderIt();
+            renderStructEditor_inner(sec, draft, existing, 'form');
         });
 
-        document.querySelectorAll<HTMLElement>('.sfe-del-btn').forEach(btn => {
+        sec.querySelectorAll<HTMLElement>('.sfe-del-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                syncDraftFromDOM();
+                syncDraftFromForm();
                 const row = btn.closest<HTMLElement>('.struct-field-row')!;
                 const idx = parseInt(row.dataset.idx!);
                 draft.fields.splice(idx, 1);
-                renderIt();
+                renderStructEditor_inner(sec, draft, existing, 'form');
             });
         });
+    }
 
-        document.getElementById('struct-save')?.addEventListener('click', () => {
-            syncDraftFromDOM();
-            if (!draft.name.trim()) { draft.name = 'MyStruct'; }
-            const existingIdx = S.structs.findIndex(d => d.id === draft.id);
-            if (existingIdx >= 0) {
-                S.structs[existingIdx] = draft;
+    // ── Text mode wiring ─────────────────────────────────────────
+    if (!isForm) {
+        const textArea = document.getElementById('struct-text-inp') as HTMLTextAreaElement;
+        const statusEl = document.getElementById('struct-parse-status')!;
+
+        // Populate without HTML encoding risks
+        textArea.value = fieldsToText(draft.fields);
+
+        const updateStatus = () => {
+            const { fields, errors } = parseStructText(textArea.value);
+            if (errors.length > 0) {
+                statusEl.innerHTML = `<span class="struct-parse-err">⚠ ${esc(errors[0])}${
+                    errors.length > 1 ? ` (+${errors.length - 1} more)` : ''}</span>`;
+            } else if (fields.length === 0) {
+                statusEl.innerHTML = `<span class="struct-parse-hint">Add field declarations above</span>`;
             } else {
-                S.structs.push(draft);
+                const total = fields.reduce((s, f) => s + fieldByteSize(f.type) * f.count, 0);
+                statusEl.innerHTML = `<span class="struct-parse-ok">✔ ${
+                    fields.length} field${fields.length === 1 ? '' : 's'} · ${total} bytes</span>`;
             }
-            S.activeStructId = draft.id;
-            vscode.postMessage({ type: 'saveStructs', structs: S.structs });
-            renderStructPanel();
+        };
+        updateStatus();
+
+        textArea.addEventListener('input', () => {
+            const { structName } = parseStructText(textArea.value);
+            if (structName && (!nameInp.value.trim() || nameInp.value === 'MyStruct')) {
+                nameInp.value = structName;
+            }
+            updateStatus();
         });
+    }
 
-        document.getElementById('struct-cancel')?.addEventListener('click', () => {
-            renderStructPanel();
-        });
-    };
+    // ── Save ─────────────────────────────────────────────────────
+    document.getElementById('struct-save')!.addEventListener('click', () => {
+        if (isForm) {
+            syncDraftFromForm();
+        } else {
+            const ta = document.getElementById('struct-text-inp') as HTMLTextAreaElement;
+            const statusEl = document.getElementById('struct-parse-status')!;
+            const { fields, errors } = parseStructText(ta.value);
+            if (errors.length > 0) {
+                statusEl.innerHTML = `<span class="struct-parse-err">⚠ Fix ${
+                    errors.length} error${errors.length === 1 ? '' : 's'} before saving.</span>`;
+                return;
+            }
+            if (fields.length === 0) {
+                statusEl.innerHTML = `<span class="struct-parse-err">⚠ No fields defined.</span>`;
+                return;
+            }
+            draft.fields = fields;
+        }
+        const name = nameInp.value.trim() || 'MyStruct';
+        if (draft.fields.length === 0) { return; }
+        const def: StructDef = { id: draft.id, name, fields: draft.fields };
+        const idx = S.structs.findIndex(d => d.id === def.id);
+        if (idx >= 0) { S.structs[idx] = def; } else { S.structs.push(def); }
+        S.activeStructId = def.id;
+        vscode.postMessage({ type: 'saveStructs', structs: S.structs });
+        renderStructPanel();
+    });
 
-    const renderIt = () => {
-        const presetOpts = STRUCT_PRESETS.map(p =>
-            `<option value="${esc(p.id)}">${esc(p.name)}</option>`
-        ).join('');
-
-        const fieldRows = draft.fields.map((f, i) => fieldRow(f, i)).join('');
-
-        sec.innerHTML =
-            `<div class="sb-hdr">${existing ? 'Edit Struct' : 'New Struct'}</div>` +
-            `<div class="struct-editor">` +
-            (!existing
-                ? `<div class="struct-row struct-preset-row">` +
-                  `<label class="struct-lbl">Preset</label>` +
-                  `<select id="struct-preset-sel" class="struct-sel">` +
-                  `<option value="">— blank —</option>${presetOpts}` +
-                  `</select>` +
-                  `<button id="struct-load-preset" class="struct-btn struct-btn-secondary">Load</button>` +
-                  `</div>`
-                : '') +
-            `<div class="struct-row">` +
-            `<label class="struct-lbl">Name</label>` +
-            `<input id="struct-name-inp" class="struct-addr-inp" type="text" value="${esc(draft.name)}" maxlength="64">` +
-            `</div>` +
-            `<div id="struct-fields">` +
-            `<div class="struct-field-hdr">` +
-            `<span class="sfe-name">Field Name</span>` +
-            `<span class="sfe-type">Type</span>` +
-            `<span class="sfe-count">×</span>` +
-            `<span class="sfe-endian">End.</span>` +
-            `<span class="sfe-del"></span>` +
-            `</div>` +
-            `${fieldRows}` +
-            `</div>` +
-            `<button id="struct-add-field" class="struct-add-field-btn">+ Add Field</button>` +
-            `<div class="struct-editor-btns">` +
-            `<button id="struct-save"   class="struct-btn struct-btn-apply">Save</button>` +
-            `<button id="struct-cancel" class="struct-btn struct-btn-secondary">Cancel</button>` +
-            `</div>` +
-            `</div>`;
-
-        wireEditorEvents();
-    };
-
-    renderIt();
+    document.getElementById('struct-cancel')!.addEventListener('click', () => {
+        renderStructPanel();
+    });
 }
 
 // ── Selection helper ──────────────────────────────────────────────
