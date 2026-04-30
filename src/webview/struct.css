@@ -1,4 +1,13 @@
-﻿/* ── Struct Overlay sidebar panel ────────────────────────────── */
+﻿.ctx-array-note {
+    padding: 6px 12px 0 12px;
+    font-size: 12px;
+    color: var(--addr-fg);
+    white-space: nowrap;
+    line-height: 1.4;
+    font-family: var(--font-ui);
+    font-style: italic;
+}
+/* ── Struct Overlay sidebar panel ────────────────────────────── */
 
 /* Shared layout tokens */
 .struct-addr-pfx {
@@ -290,7 +299,7 @@
 /* 5-col grid: [offset 40px] [exp-btn 16px] [name 1fr] [col1 auto] [col2 auto] */
 .si-field {
     display: grid;
-    grid-template-columns: 40px 16px 1fr auto auto;
+    grid-template-columns: 40px 16px 1fr auto;
     gap: 3px; align-items: baseline;
     padding: 2px 8px;
     cursor: pointer;
@@ -304,6 +313,14 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .si-f-pri { font-size: 10px; color: var(--high-color); font-family: var(--font-editor); white-space: nowrap; text-align: right; }
+.si-f-val { font-size: 10px; color: var(--high-color); font-family: var(--font-editor); white-space: nowrap; text-align: right; }
+.si-f-val[data-val-type="ascii"] { color: var(--print-color); }
+.si-f-val[data-val-type="bin"]   { color: var(--fg); white-space: normal; text-align: left; }
+.si-bit { font-family: var(--font-editor); display: inline-block; letter-spacing: 0; padding: 0 .25ch; }
+.si-bit.one  { color: var(--fg); font-weight: 700; }
+.si-bit.zero { color: var(--fg); opacity: .70; }
+.si-bin-wrap { display: inline-block; max-width: 100%; white-space: normal; }
+.si-bin-wrap br { display: block; line-height: 1.1; }
 .si-f-sec { font-size: 9px;  color: var(--addr-fg);   font-family: var(--font-editor); white-space: nowrap; text-align: right; opacity: .75; }
 .si-f-ptr { color: #e8a020 !important; font-style: italic; }
 .si-no-data { opacity: .4; }
@@ -311,13 +328,35 @@
 /* Array field group — same 5-col grid for alignment */
 .si-arr-grp-hdr {
     display: grid;
-    grid-template-columns: 40px 16px 1fr auto auto;
+    grid-template-columns: 40px 16px 1fr auto;
     gap: 3px; align-items: center;
     padding: 2px 8px;
     cursor: pointer;
     transition: background .1s;
     border-top: 1px solid rgba(255,255,255,.05);
 }
+
+/* per-field value-type menu */
+.si-val-menu {
+    position: fixed; z-index: 9999; background: var(--panel-bg);
+    border: 1px solid var(--border); border-radius: 4px; padding: 4px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.6);
+    min-width: 260px;
+    max-width: 340px;
+    word-break: break-word;
+}
+.si-val-menu .ctx-hint {
+    display: block;
+    padding: 6px 12px 0 12px;
+    font-size: 12px;
+    color: var(--addr-fg);
+    white-space: normal;
+    line-height: 1.4;
+    word-break: break-word;
+}
+.si-val-row { padding: 6px 10px; cursor: pointer; font-size: 12px; color: var(--fg); }
+.si-val-row:hover { background: var(--hover-bg); }
+.si-val-row.active { font-weight: 700; color: var(--high-color); }
 .si-arr-grp-hdr:hover { background: var(--hover-bg); }
 .si-arr-exp-btn {
     width: 16px; height: 16px;
@@ -325,7 +364,7 @@
     background: transparent; border: none; padding: 0;
     color: var(--addr-fg); font-size: 12px; cursor: pointer; line-height: 1;
 }
-.si-arr-count {
+.si-arr-addr {
     font-size: 9px; color: var(--addr-fg); font-family: var(--font-editor);
     white-space: nowrap; text-align: right;
 }

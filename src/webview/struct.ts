@@ -33,11 +33,11 @@ const _expanded = new Set<string>();
 /** Array field groups that are expanded. Key: `${pinId}::${baseName}`. Collapsed by default. */
 const _expandedArrayFields = new Set<string>();
 
-type ColType = 'hex' | 'dec' | 'ascii';
-/** Display type for value column 1 (always shown). Default: hex. */
-let _col1Type: ColType = 'hex';
-/** Display type for value column 2. 'none' means hidden. Default: none. */
-let _col2Type: ColType | 'none' = 'none';
+type ColType = 'hex' | 'dec' | 'ascii' | 'bin';
+/** Default display type for value cells (per-field default). */
+let _defaultValType: ColType = 'hex';
+/** Per-field display override keyed by absolute byte-start address. */
+const _fieldValTypes = new Map<number, ColType>();
 /** Whether the inline add-instance form is open. */
 let _addingPin = false;
 
@@ -311,21 +311,6 @@ export function renderStructPins(): void {
         `<button id="si-add-btn" class="si-add-btn"${!hasStructs || _addingPin ? ' disabled' : ''}>＋ Add</button>` +
         `</div>` +
         addFormHtml +
-        `<div class="si-colcfg">` +
-        `<span class="si-colcfg-lbl">Col 1</span>` +
-        `<select id="si-col1-sel" class="si-colcfg-sel">` +
-        `<option value="hex"${_col1Type==='hex'?' selected':''}>hex</option>` +
-        `<option value="dec"${_col1Type==='dec'?' selected':''}>dec</option>` +
-        `<option value="ascii"${_col1Type==='ascii'?' selected':''}>ascii</option>` +
-        `</select>` +
-        `<span class="si-colcfg-lbl">Col 2</span>` +
-        `<select id="si-col2-sel" class="si-colcfg-sel">` +
-        `<option value="none"${_col2Type==='none'?' selected':''}>—</option>` +
-        `<option value="hex"${_col2Type==='hex'?' selected':''}>hex</option>` +
-        `<option value="dec"${_col2Type==='dec'?' selected':''}>dec</option>` +
-        `<option value="ascii"${_col2Type==='ascii'?' selected':''}>ascii</option>` +
-        `</select>` +
-        `</div>` +
         `<div id="si-list">${instHtml}</div>`;
 
     // ── ＋ Add button ──
@@ -380,14 +365,7 @@ export function renderStructPins(): void {
         if (_expanded.size > 0) { renderStructPins(); }
     });
 
-    document.getElementById('si-col1-sel')?.addEventListener('change', e => {
-        _col1Type = (e.target as HTMLSelectElement).value as ColType;
-        renderStructPins();
-    });
-    document.getElementById('si-col2-sel')?.addEventListener('change', e => {
-        _col2Type = (e.target as HTMLSelectElement).value as ColType | 'none';
-        renderStructPins();
-    });
+    // Per-field value type is handled via right-click menu on individual values.
 
     wireInstanceCards(sec);
 }
@@ -401,13 +379,34 @@ function getValForType(r: DecodedField, valType: ColType): string {
     bytes.forEach((b, i) => dv.setUint8(i, b));
     const le    = S.endian === 'le';
     const hexFn = (v: number, pad: number) => `0x${(v >>> 0).toString(16).toUpperCase().padStart(pad, '0')}`;
+    const binFn = () => {
+        // Continuous bit string (MSB-first per byte), grouped into 4-bit nibbles.
+        const bitSeq = bytes.map(b => b.toString(2).padStart(8, '0')).join('');
+        const groups = bitSeq.match(/.{1,4}/g) || [];
+        const renderGroups = (grps: string[]) => grps.map(g =>
+            [...g].map(bit => `<span class="si-bit ${bit === '1' ? 'one' : 'zero'}">${bit}</span>`).join('')
+        ).join(' ');
+
+        // Full HTML broken into lines of max 16 bits (4 nibbles) per line.
+        const groupsPerLine = 4; // 4 nibbles = 16 bits
+        const lines: string[] = [];
+        for (let i = 0; i < groups.length; i += groupsPerLine) {
+            lines.push(renderGroups(groups.slice(i, i + groupsPerLine)));
+        }
+        const fullHtml = lines.join('<br>');
+
+        // Always return the full, multi-line binary HTML.
+        return `<span class="si-bin-wrap">${fullHtml}</span>`;
+    };
     // Pointer always renders as arrow + hex address regardless of valType
     if (r.type === 'pointer') {
         const v = dv.getUint32(0, le) >>> 0;
-        return `\u2192 0x${v.toString(16).toUpperCase().padStart(8, '0')}`;
+        return `0x${v.toString(16).toUpperCase().padStart(8, '0')} \u2192`;
     }
+    if (valType === 'bin') { return binFn(); }
     if (valType === 'ascii') {
-        return bytes.map(b => b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.').join('');
+        const s = bytes.map(b => b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.').join('');
+        return `'${s}'`;
     }
     switch (r.type) {
         case 'uint8':  { const v = dv.getUint8(0);              return valType === 'hex' ? hexFn(v, 2) : String(v); }
@@ -432,20 +431,67 @@ function getValForType(r: DecodedField, valType: ColType): string {
     }
 }
 
+/** Get a plain-text representation suitable for copying. */
+function getCopyText(r: DecodedField, valType: ColType): string {
+    if (!r.hasData) { return '??'; }
+    const bytes = r.bytesHex.split(' ').map(h => parseInt(h, 16));
+    const le    = S.endian === 'le';
+    const hexPad = (v: number, pad: number) => `0x${(v >>> 0).toString(16).toUpperCase().padStart(pad, '0')}`;
+    if (r.type === 'pointer') {
+        const buf = new ArrayBuffer(bytes.length);
+        const dv = new DataView(buf);
+        bytes.forEach((b, i) => dv.setUint8(i, b));
+        const v = dv.getUint32(0, le) >>> 0;
+        return hexPad(v, 8);
+    }
+    if (valType === 'bin') {
+        const bitSeq = bytes.map(b => b.toString(2).padStart(8, '0')).join('');
+        const groups = bitSeq.match(/.{1,4}/g) || [];
+        return groups.join(' ');
+    }
+    if (valType === 'ascii') {
+        return bytes.map(b => (b >= 0x20 && b < 0x7f) ? String.fromCharCode(b) : '.').join('');
+    }
+    const buf = new ArrayBuffer(bytes.length);
+    const dv = new DataView(buf);
+    bytes.forEach((b, i) => dv.setUint8(i, b));
+    switch (r.type) {
+        case 'uint8':  { const v = dv.getUint8(0);              return valType === 'hex' ? hexPad(v, 2) : String(v); }
+        case 'int8':   { const v = dv.getInt8(0);               return valType === 'hex' ? hexPad(dv.getUint8(0), 2) : String(v); }
+        case 'uint16': { const v = dv.getUint16(0, le);         return valType === 'hex' ? hexPad(v, 4) : String(v); }
+        case 'int16':  { const v = dv.getInt16(0, le);          return valType === 'hex' ? hexPad(dv.getUint16(0, le), 4) : String(v); }
+        case 'uint32': { const v = dv.getUint32(0, le) >>> 0;   return valType === 'hex' ? hexPad(v, 8) : String(v); }
+        case 'int32':  { const v = dv.getInt32(0, le);          return valType === 'hex' ? hexPad(dv.getUint32(0, le), 8) : String(v); }
+        case 'float32': {
+            const v = dv.getFloat32(0, le);
+            return valType === 'hex'
+                ? bytes.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join('')
+                : isNaN(v) ? 'NaN' : !isFinite(v) ? String(v) : parseFloat(v.toPrecision(7)).toString();
+        }
+        case 'float64': {
+            const v = dv.getFloat64(0, le);
+            return valType === 'hex'
+                ? bytes.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join('')
+                : isNaN(v) ? 'NaN' : !isFinite(v) ? String(v) : parseFloat(v.toPrecision(10)).toString();
+        }
+        default: return r.decoded;
+    }
+}
+
 /** Build a single field row (5-col grid) for scalar fields and array elements. */
 function mkFieldRow(r: DecodedField, bs: number, bc: number): string {
     const nd  = !r.hasData ? ' si-no-data' : '';
     const ptr = r.type === 'pointer';
-    const v1  = getValForType(r, _col1Type);
-    const v2  = _col2Type !== 'none' ? getValForType(r, _col2Type) : '';
+    const t   = _fieldValTypes.get(bs) ?? _defaultValType;
+    const v   = getValForType(r, t);
+    const valHtml = t === 'bin' ? v : esc(v);
     return (
         `<div class="si-field${nd}${ptr ? ' si-ptr-field' : ''}" ` +
         `data-byte-start="${bs}" data-byte-cnt="${bc}">` +
         `<span class="si-f-off">+${r.byteOffset.toString(16).toUpperCase().padStart(3, '0')}</span>` +
         `<span></span>` +
         `<span class="si-f-name">${esc(r.fieldName)}</span>` +
-        `<span class="si-f-pri${ptr ? ' si-f-ptr' : ''}">${esc(v1)}</span>` +
-        `<span class="si-f-sec">${esc(v2)}</span>` +
+        `<span class="si-f-val si-f-pri${ptr ? ' si-f-ptr' : ''}" data-val-type="${t}" data-bs="${bs}">${valHtml}</span>` +
         `</div>`
     );
 }
@@ -483,6 +529,8 @@ function buildInstanceCard(pin: StructPin, i: number): string {
                 const byteStart = pin.addr + r0.byteOffset;
                 const totalCnt  = g.rows.reduce((s, r) => s + fieldByteSize(r.type), 0);
                 const elHtml  = g.rows.map(r => mkFieldRow(r, pin.addr + r.byteOffset, fieldByteSize(r.type))).join('');
+                // Show address of first element like a pointer (0xXXXXXXXX)
+                const addrHex = byteStart.toString(16).toUpperCase().padStart(8, '0');
                 return (
                     `<div class="si-arr-grp${isOpen ? ' open' : ''}" data-arr-key="${esc(key)}">` +
                     `<div class="si-arr-grp-hdr" ` +
@@ -490,10 +538,10 @@ function buildInstanceCard(pin: StructPin, i: number): string {
                     `<span class="si-f-off">+${r0.byteOffset.toString(16).toUpperCase().padStart(3, '0')}</span>` +
                     `<button class="si-arr-exp-btn">${isOpen ? '▾' : '▸'}</button>` +
                     `<span class="si-f-name">${esc(g.baseName)}</span>` +
-                    `<span class="si-arr-count">[${g.rows.length}]</span>` +
+                    `<span class="si-arr-addr">0x${addrHex}</span>` +
                     `<span></span>` +
                     `</div>` +
-                    `<div class="si-arr-grp-body"${isOpen ? '' : ' style="display:none"'}>${elHtml}</div>` +
+                    `<div class="si-arr-grp-body"${isOpen ? '' : ' style=\"display:none\"'}>${elHtml}</div>` +
                     `</div>`
                 );
             }
@@ -617,6 +665,264 @@ function wireInstanceCards(sec: HTMLElement): void {
             S.selEnd   = start + cnt - 1;
             import('./memoryView.js').then(m => { m.applySel(); m.scrollTo(start); });
             import('./sidebar.js').then(m => m.updateInspector());
+        });
+    });
+
+    // Right-click on a field row to open the value menu. Pass the pin index
+    // so the menu can decode values when performing copy actions.
+    sec.querySelectorAll<HTMLElement>('.si-field').forEach(row => {
+        row.addEventListener('contextmenu', ev => {
+            ev.preventDefault(); ev.stopPropagation();
+            const start = parseInt(row.dataset.byteStart!);
+            const card = row.closest<HTMLElement>('.si-card');
+            const pinIdx = card ? parseInt(card.dataset.idx!) : -1;
+            // Determine if this is a pointer field
+            const valCell = row.querySelector<HTMLElement>('.si-f-val');
+            const isPointer = valCell?.classList.contains('si-f-ptr');
+            // Only allow per-element change, not group, for array elements
+            showFieldValMenu(ev.clientX, ev.clientY, start, undefined, pinIdx, { isPointer });
+        });
+    });
+
+    // Right-click on an array group header should allow actions on the
+    // entire group (child elements).
+    sec.querySelectorAll<HTMLElement>('.si-arr-grp-hdr').forEach(hdr => {
+        hdr.addEventListener('contextmenu', ev => {
+            ev.preventDefault(); ev.stopPropagation();
+            const grp = hdr.closest<HTMLElement>('.si-arr-grp')!;
+            const bsList = Array.from(grp.querySelectorAll<HTMLElement>('.si-field'))
+                .map(r => parseInt(r.dataset.byteStart!));
+            const card = hdr.closest<HTMLElement>('.si-card');
+            const pinIdx = card ? parseInt(card.dataset.idx!) : -1;
+            const start = bsList[0];
+            showFieldValMenu(ev.clientX, ev.clientY, start, bsList, pinIdx, { isArrayHeader: true });
+        });
+    });
+}
+
+// Floating per-field value-type menu
+let _valMenuEl: HTMLElement | null = null;
+function hideFieldValMenu(): void {
+    if (_valMenuEl) { _valMenuEl.remove(); _valMenuEl = null; }
+    document.removeEventListener('click', hideFieldValMenu);
+}
+function showFieldValMenu(x: number, y: number, bs: number, bsList?: number[], pinIdx?: number, opts?: { isPointer?: boolean, isArrayHeader?: boolean }): void {
+    hideFieldValMenu();
+    const types: ColType[] = ['hex', 'dec', 'bin', 'ascii'];
+    let cur: ColType | null = null;
+    if (bsList && bsList.length > 0) {
+        const vals = bsList.map(b => _fieldValTypes.get(b) ?? _defaultValType);
+        const allSame = vals.every(v => v === vals[0]);
+        cur = allSame ? (vals[0] as ColType) : null;
+    } else {
+        cur = _fieldValTypes.get(bs) ?? _defaultValType;
+    }
+
+    // Helpers for menu
+    const item = (cmd: string, label: string, hint = '') =>
+        `<div class="ctx-row" data-cmd="${cmd}">` +
+        `<span class="ctx-label">${esc(label)}</span>` +
+        (hint ? `<span class="ctx-hint">${esc(hint)}</span>` : '') +
+        `</div>`;
+    const sep = `<div class="ctx-sep"></div>`;
+    const sub = (label: string, id: string, body: string) =>
+        `<div class="ctx-row ctx-has-sub" data-sub="${id}">` +
+        `<span class="ctx-label">${esc(label)}</span>` +
+        `<div class="ctx-submenu">${body}</div>` +
+        `</div>`;
+
+    // Pointer: only allow copy address value
+    if (opts?.isPointer) {
+        const el = document.createElement('div');
+        el.id = 'si-val-menu'; el.className = 'si-val-menu ctx-menu';
+        el.innerHTML = item('copy-hex', 'Copy value');
+        document.body.appendChild(el);
+        const mw = el.offsetWidth || 180; const mh = el.offsetHeight || 60;
+        el.style.left = `${Math.min(x, window.innerWidth - mw - 8)}px`;
+        el.style.top  = `${Math.min(y, window.innerHeight - mh - 8)}px`;
+        el.querySelectorAll<HTMLElement>('.ctx-row[data-cmd]').forEach(row => {
+            row.addEventListener('click', ev => {
+                ev.stopPropagation();
+                // Always copy as hex address
+                let pin: StructPin | undefined;
+                const all = allStructs();
+                if (typeof pinIdx === 'number' && pinIdx >= 0) {
+                    pin = S.structPins[pinIdx];
+                } else {
+                    pin = S.structPins.find(p => {
+                        const def = all.find(d => d.id === p.structId);
+                        if (!def) { return false; }
+                        const size = structByteSize(def);
+                        return bs >= p.addr && bs < p.addr + size;
+                    });
+                }
+                if (!pin) { hideFieldValMenu(); return; }
+                const def = all.find(d => d.id === pin!.structId);
+                if (!def) { hideFieldValMenu(); return; }
+                const rows = decodeStruct(def, pin.addr, S.flatBytes, S.endian);
+                const r = rows.find(rr => pin!.addr + rr.byteOffset === bs);
+                const toCopy = r ? getCopyText(r, 'hex') : '??';
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(toCopy).catch(() => {
+                        const ta = document.createElement('textarea');
+                        ta.value = toCopy; document.body.appendChild(ta); ta.select();
+                        document.execCommand('copy'); ta.remove();
+                    });
+                } else {
+                    const ta = document.createElement('textarea');
+                    ta.value = toCopy; document.body.appendChild(ta); ta.select();
+                    document.execCommand('copy'); ta.remove();
+                }
+                hideFieldValMenu();
+                return;
+            });
+        });
+        setTimeout(() => document.addEventListener('click', hideFieldValMenu), 0);
+        _valMenuEl = el;
+        return;
+    }
+
+    // Copy submenu
+    const copyMenu =
+        item('copy-hex',   'Hex',   '') +
+        item('copy-dec',   'Decimal', '') +
+        item('copy-bin',   'Binary', '') +
+        item('copy-ascii', 'ASCII',  '');
+
+    // Display type submenu
+    const dispMenu = types.map(t =>
+        `<div class="ctx-row${t===cur ? ' active' : ''}" data-cmd="disp-${t}">` +
+        `<span class="ctx-label">${t}</span>` +
+        `</div>`
+    ).join('');
+    // For array header, show a different note (single line, no wrap, custom class)
+    const note = opts?.isArrayHeader
+        ? `<div class="ctx-array-note">apply to all array elements</div>`
+        : '';
+
+    // Compose menu
+    const el = document.createElement('div');
+    el.id = 'si-val-menu'; el.className = 'si-val-menu ctx-menu';
+    el.innerHTML =
+        sub('Copy', 'copy', copyMenu) +
+        sep +
+        sub('Change display type', 'disp', dispMenu) +
+        note;
+
+    document.body.appendChild(el);
+    const mw = el.offsetWidth || 220; const mh = el.offsetHeight || 120;
+    el.style.left = `${Math.min(x, window.innerWidth - mw - 8)}px`;
+    el.style.top  = `${Math.min(y, window.innerHeight - mh - 8)}px`;
+
+    // Wire leaf-item clicks
+    el.querySelectorAll<HTMLElement>('.ctx-row[data-cmd]').forEach(row => {
+        row.addEventListener('click', ev => {
+            ev.stopPropagation();
+            const cmd = row.dataset.cmd!;
+            // Copy actions
+            if (cmd.startsWith('copy-')) {
+                const t = cmd.replace('copy-', '') as ColType;
+                let pin: StructPin | undefined;
+                const all = allStructs();
+                if (typeof pinIdx === 'number' && pinIdx >= 0) {
+                    pin = S.structPins[pinIdx];
+                } else {
+                    pin = S.structPins.find(p => {
+                        const def = all.find(d => d.id === p.structId);
+                        if (!def) { return false; }
+                        const size = structByteSize(def);
+                        return bs >= p.addr && bs < p.addr + size;
+                    });
+                }
+                if (!pin) { hideFieldValMenu(); return; }
+                const def = all.find(d => d.id === pin!.structId);
+                if (!def) { hideFieldValMenu(); return; }
+                const rows = decodeStruct(def, pin.addr, S.flatBytes, S.endian);
+                const toCopy = (bsList && bsList.length > 0)
+                    ? bsList.map(b => {
+                        const r = rows.find(rr => pin!.addr + rr.byteOffset === b);
+                        return r ? getCopyText(r, t) : '??';
+                      }).join('\n')
+                    : (() => {
+                        const r = rows.find(rr => pin!.addr + rr.byteOffset === bs);
+                        return r ? getCopyText(r, t) : '??';
+                      })();
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(toCopy).catch(() => {
+                        const ta = document.createElement('textarea');
+                        ta.value = toCopy; document.body.appendChild(ta); ta.select();
+                        document.execCommand('copy'); ta.remove();
+                    });
+                } else {
+                    const ta = document.createElement('textarea');
+                    ta.value = toCopy; document.body.appendChild(ta); ta.select();
+                    document.execCommand('copy'); ta.remove();
+                }
+                hideFieldValMenu();
+                return;
+            }
+            // Display type actions
+            if (cmd.startsWith('disp-')) {
+                const t = cmd.replace('disp-', '') as ColType;
+                // Only allow group change from array header, not from element
+                if (opts?.isArrayHeader && bsList && bsList.length > 0) {
+                    bsList.forEach(b => {
+                        if (t === _defaultValType) { _fieldValTypes.delete(b); }
+                        else { _fieldValTypes.set(b, t); }
+                    });
+                } else {
+                    if (t === _defaultValType) { _fieldValTypes.delete(bs); }
+                    else { _fieldValTypes.set(bs, t); }
+                }
+                hideFieldValMenu();
+                renderStructPins();
+                return;
+            }
+        });
+    });
+
+    // Wire submenus (hover logic)
+    wireStructSubmenus(el);
+
+    // Hide when clicking outside
+    setTimeout(() => document.addEventListener('click', hideFieldValMenu), 0);
+    _valMenuEl = el;
+}
+function wireStructSubmenus(menuEl: HTMLElement): void {
+    let closeTimer: ReturnType<typeof setTimeout> | null = null;
+    let activeSub: HTMLElement | null = null;
+    const openSub = (sub: HTMLElement, row: HTMLElement) => {
+        if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+        if (activeSub && activeSub !== sub) { activeSub.style.display = 'none'; }
+        activeSub = sub;
+        sub.style.display = 'block';
+        // Viewport edge: flip left if no room on right
+        const rr = row.getBoundingClientRect();
+        const sw = sub.offsetWidth || 220;
+        if (rr.right + sw > window.innerWidth - 8) {
+            sub.style.left = 'auto'; sub.style.right = '100%';
+        } else {
+            sub.style.left = '100%'; sub.style.right = 'auto';
+        }
+    };
+    const scheduledClose = (sub: HTMLElement) => {
+        closeTimer = setTimeout(() => {
+            sub.style.display = 'none';
+            if (activeSub === sub) { activeSub = null; }
+        }, 100);
+    };
+    menuEl.querySelectorAll<HTMLElement>('.ctx-has-sub').forEach(row => {
+        const sub = row.querySelector<HTMLElement>('.ctx-submenu');
+        if (!sub) { return; }
+        row.addEventListener('mouseenter', () => openSub(sub, row));
+        row.addEventListener('mouseleave', e => {
+            if (!sub.contains(e.relatedTarget as Node)) { scheduledClose(sub); }
+        });
+        sub.addEventListener('mouseenter', () => {
+            if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+        });
+        sub.addEventListener('mouseleave', e => {
+            if (!row.contains(e.relatedTarget as Node)) { scheduledClose(sub); }
         });
     });
 }
