@@ -7,7 +7,7 @@ import { esc, fmtB }                                  from './utils';
 import { rerender }                                   from './render';
 import { renderMemHeader, renderMemBody, applySel, scrollTo } from './memoryView';
 import { renderInspector, renderBits, renderLabels, updateInspector, updateLabelFormSel } from './sidebar';
-import { renderStructPanel, renderStructPins, onSelectionChangeForStruct }              from './struct';
+import { renderStructPanel, renderStructPins, onSelectionChangeForStruct, resetStructViewState } from './struct';
 import { initSearch, runSearch, clearSearch, nextMatch, prevMatch } from './search';
 import { initFlatBytes, buildMemRows }                from './data';
 
@@ -123,7 +123,7 @@ function render(): void {
                     <div class="sb-section" id="s-labels"></div>
                 </div>
                 <div class="sb-tab-panel ${S.sidebarTab === 'struct' ? 'active' : ''}" id="sbp-struct">
-                    <div class="sb-section" id="s-struct-pins"></div>
+                    <div id="s-struct-pins"></div>
                 </div>
             </div>
             <div id="side-tabs">
@@ -239,10 +239,12 @@ function render(): void {
         document.getElementById('stab-struct')!.classList.toggle('active', S.sidebarTab === 'struct');
     }
     document.getElementById('stab-insp')!.addEventListener('click', () => {
+        resetStructViewState();
         S.sidebarTab = 'inspector';
         applySidebarState();
     });
     document.getElementById('stab-struct')!.addEventListener('click', () => {
+        renderLabels();
         S.sidebarTab = 'struct';
         applySidebarState();
     });

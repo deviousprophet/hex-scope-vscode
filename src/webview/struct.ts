@@ -133,9 +133,6 @@ function editorHtml(draft: StructDef, existing: StructDef | null): string {
     const fieldRows = draft.fields.map((f, i) => fieldRowHtml(f, i, n === 1, n)).join('');
     return (
         `<div class="si-editor-wrap">` +
-        `<div class="si-editor-hdr-row">` +
-        `<span class="sb-hdr" style="margin:0">${existing ? 'Edit Type' : 'New Type'}</span>` +
-        `</div>` +
         `<div class="se-form">` +
         `<input id="se-name" class="se-name-inp" type="text" value="${esc(draft.name)}" ` +
                `maxlength="64" placeholder="TypeName" spellcheck="false" autocomplete="off">` +
@@ -296,21 +293,24 @@ function wireEditorInSec(sec: HTMLElement): void {
         const idx = S.structs.findIndex(d => d.id === def.id);
         if (idx >= 0) { S.structs[idx] = def; } else { S.structs.push(def); }
         vscode.postMessage({ type: 'saveStructs', structs: S.structs });
-        const { fromAdd, fromManage } = _editingType!;
+        const { fromAdd } = _editingType!;
         _editingType = null;
         if (fromAdd) {
             _applyStructId = def.id;
             _addingPin = true;
+            _managingTypes = false;
         }
-        if (fromManage) { _managingTypes = true; }
+        // fromManage: _managingTypes stays true → re-render shows updated type list
         renderStructPins();
     });
 
     sec.querySelector('#se-cancel')!.addEventListener('click', () => {
-        const { fromAdd, fromManage } = _editingType!;
+        const { fromAdd } = _editingType!;
         _editingType = null;
-        if (fromAdd)    { _addingPin = true; }
-        if (fromManage) { _managingTypes = true; }
+        if (fromAdd) {
+            _addingPin = true;
+            _managingTypes = false;
+        }
         renderStructPins();
     });
 }
@@ -338,81 +338,23 @@ export function renderStructPins(): void {
         _applyStructId = all[0].id;
     }
 
-    // ── Editor mode: replace section content with the type editor ──
-    if (_editingType) {
-        sec.innerHTML = editorHtml(_editingType.draft, _editingType.existing);
-        wireEditorInSec(sec);
-        sec.querySelector<HTMLInputElement>('#se-name')?.focus();
-        return;
-    }
+    // When editing a type, ensure the types panel is visible
+    if (_editingType) { _managingTypes = true; }
 
-    // ── Manage-types mode ──
-    if (_managingTypes) {
-        const typeRows = all.length === 0
-            ? `<div class="sb-empty">No types defined yet.</div>`
-            : all.map(d => {
-                const fieldCount = d.fields.length;
-                const meta = `${fieldCount} field${fieldCount !== 1 ? 's' : ''}`;
-                return (
-                    `<div class="sd-row">` +
-                    `<span class="sd-name">${esc(d.name)}</span>` +
-                    `<span class="sd-meta">${meta}</span>` +
-                    actionBtnsHtml(`data-struct-id="${esc(d.id)}"`, `data-struct-id="${esc(d.id)}"`) +
-                    `</div>`
-                );
-            }).join('');
-
-        sec.innerHTML =
-            `<div class="si-hdr-row">` +
-            `<span class="sb-hdr" style="margin:0">Struct Types</span>` +
-            `<button id="sm-new-btn" class="struct-btn struct-btn-secondary">New type</button>` +
-            `<button id="sm-close-btn" class="si-add-btn" title="Back">✕</button>` +
-            `</div>` +
-            `<div id="sm-list">${typeRows}</div>`;
-
-        document.getElementById('sm-close-btn')?.addEventListener('click', () => {
-            _managingTypes = false;
-            renderStructPins();
-        });
-        document.getElementById('sm-new-btn')?.addEventListener('click', () => {
-            _managingTypes = false;
-            const draftId = `user_${Date.now()}`;
-            _editingType = {
-                draft: { id: draftId, name: '', packed: false, fields: [{ name: 'field0', type: 'uint32', count: 1, endian: 'inherit' }] },
-                existing: null,
-                fromAdd: false,
-                fromManage: true,
-            };
-            renderStructPins();
-        });
-        wireActionBtns(
-            sec,
-            '.act-btn-edit',
-            '.act-btn-del',
-            btn => {
-                const existing = S.structs.find(d => d.id === btn.dataset.structId) ?? null;
-                if (!existing) { return; }
-                _managingTypes = false;
-                _editingType = {
-                    draft: { id: existing.id, name: existing.name, packed: existing.packed ?? false, fields: existing.fields.map(f => ({ ...f })) },
-                    existing,
-                    fromAdd: false,
-                    fromManage: true,
-                };
-                renderStructPins();
-            },
-            btn => {
-                const id = btn.dataset.structId!;
-                S.structs    = S.structs.filter(d => d.id !== id);
-                S.structPins = S.structPins.filter(p => p.structId !== id);
-                if (_applyStructId === id) { _applyStructId = null; }
-                vscode.postMessage({ type: 'saveStructs',    structs: S.structs });
-                vscode.postMessage({ type: 'saveStructPins', pins:    S.structPins });
-                renderStructPins();
-            },
-        );
-        return;
-    }
+    // ── Build types panel ──
+    const typeRows = all.length === 0
+        ? `<div class="sb-empty">No types defined yet.</div>`
+        : all.map(d => {
+            const fieldCount = d.fields.length;
+            const meta = `${fieldCount} field${fieldCount !== 1 ? 's' : ''}`;
+            return (
+                `<div class="sd-row">` +
+                `<span class="sd-name">${esc(d.name)}</span>` +
+                `<span class="sd-meta">${meta}</span>` +
+                actionBtnsHtml(`data-struct-id="${esc(d.id)}"`, `data-struct-id="${esc(d.id)}"`) +
+                `</div>`
+            );
+        }).join('');
 
     const instBadge = S.structPins.length > 0 ? `<span class="sb-badge">${S.structPins.length}</span>` : '';
 
@@ -459,7 +401,7 @@ export function renderStructPins(): void {
             `</div>` +
             typeRowHtml +
             `<div class="sa-row sa-btn-row">` +
-            `<button id="sa-confirm" class="struct-btn struct-btn-apply"${(!_applyStructId || !addrVal) ? ' disabled' : ''}>Confirm</button>` +
+            `<button id="sa-confirm" class="struct-btn struct-btn-apply"${!_applyStructId ? ' disabled' : ''}>Confirm</button>` +
             `<button id="sa-cancel" class="struct-btn struct-btn-cancel">Cancel</button>` +
             `</div>` +
             `</div>`;
@@ -469,7 +411,13 @@ export function renderStructPins(): void {
         ? `<div class="sb-empty">No instances yet. Click [\uff0b Add] to create one.</div>`
         : S.structPins.map((pin, i) => buildInstanceCard(pin, i)).join('');
 
+    // ── Both panels rendered side-by-side; CSS slides between them ──
     sec.innerHTML =
+        `<div class="si-panel-clip">` +
+        `<div class="si-panel-track${_managingTypes ? ' si-showing-types' : ''}" id="si-track">` +
+
+        // ── Main panel (instances) ──
+        `<div class="si-main-panel">` +
         `<div class="si-hdr-row">` +
         `<span class="sb-hdr" style="margin:0">Struct Instances ${instBadge}</span>` +
         `<div class="endian-tabs sa-endian-tabs">` +
@@ -480,7 +428,84 @@ export function renderStructPins(): void {
         `<button id="si-types-btn" class="si-icon-btn" title="Manage types">&#9776;</button>` +
         `</div>` +
         addFormHtml +
-        `<div id="si-list">${instHtml}</div>`;
+        `<div id="si-list">${instHtml}</div>` +
+        `</div>` +
+
+        // ── Types panel ──
+        `<div class="si-types-panel">` +
+        `<div class="si-hdr-row">` +
+        `<button id="sm-close-btn" class="si-icon-btn" title="${_editingType ? 'Cancel' : 'Back'}">&#8592;</button>` +
+        `<span class="sb-hdr" style="margin:0">${_editingType ? (_editingType.existing ? 'Edit Type' : 'New Type') : 'Struct Types'}</span>` +
+        (!_editingType ? `<button id="sm-new-btn" class="struct-btn struct-btn-secondary">New type</button>` : '') +
+        `</div>` +
+        (_editingType ? editorHtml(_editingType.draft, _editingType.existing) : `<div id="sm-list">${typeRows}</div>`) +
+        `</div>` +
+
+        `</div>` + // si-panel-track
+        `</div>`; // si-panel-clip
+
+    // ── Types button: slide in (no re-render) ──
+    document.getElementById('si-types-btn')?.addEventListener('click', () => {
+        _managingTypes = true;
+        document.getElementById('si-track')?.classList.add('si-showing-types');
+    });
+
+    // ── Close/cancel: if editing a type cancel it; otherwise slide back ──
+    document.getElementById('sm-close-btn')?.addEventListener('click', () => {
+        if (_editingType) {
+            const { fromAdd } = _editingType;
+            _editingType = null;
+            if (fromAdd) {
+                _addingPin = true;
+                _managingTypes = false;
+            }
+            // fromManage: stay on types panel (re-render shows type list)
+            renderStructPins();
+        } else {
+            _managingTypes = false;
+            document.getElementById('si-track')?.classList.remove('si-showing-types');
+        }
+    });
+
+    // ── New type (from types panel) ──
+    document.getElementById('sm-new-btn')?.addEventListener('click', () => {
+        const draftId = `user_${Date.now()}`;
+        _editingType = {
+            draft: { id: draftId, name: '', packed: false, fields: [{ name: 'field0', type: 'uint32', count: 1, endian: 'inherit' }] },
+            existing: null,
+            fromAdd: false,
+            fromManage: true,
+        };
+        renderStructPins();
+    });
+
+    // ── Edit / delete type actions ──
+    const typesPanel = sec.querySelector<HTMLElement>('.si-types-panel')!;
+    wireActionBtns(
+        typesPanel,
+        '.act-btn-edit',
+        '.act-btn-del',
+        btn => {
+            const existing = S.structs.find(d => d.id === btn.dataset.structId) ?? null;
+            if (!existing) { return; }
+            _editingType = {
+                draft: { id: existing.id, name: existing.name, packed: existing.packed ?? false, fields: existing.fields.map(f => ({ ...f })) },
+                existing,
+                fromAdd: false,
+                fromManage: true,
+            };
+            renderStructPins();
+        },
+        btn => {
+            const id = btn.dataset.structId!;
+            S.structs    = S.structs.filter(d => d.id !== id);
+            S.structPins = S.structPins.filter(p => p.structId !== id);
+            if (_applyStructId === id) { _applyStructId = null; }
+            vscode.postMessage({ type: 'saveStructs',    structs: S.structs });
+            vscode.postMessage({ type: 'saveStructPins', pins:    S.structPins });
+            renderStructPins();
+        },
+    );
 
     // ── ＋ Add button ──
     document.getElementById('si-add-btn')?.addEventListener('click', () => {
@@ -489,17 +514,16 @@ export function renderStructPins(): void {
         document.getElementById('sa-name')?.focus();
     });
 
-    // ── Types button ──
-    document.getElementById('si-types-btn')?.addEventListener('click', () => {
-        _managingTypes = true;
-        _addingPin = false;
-        renderStructPins();
-    });
-
     // ── Add-form wiring ──
     if (_addingPin) {
         document.getElementById('sa-struct-sel')?.addEventListener('change', e => {
             _applyStructId = (e.target as HTMLSelectElement).value || null;
+            // Preserve any address the user already typed before re-render
+            const curAddrInp = document.getElementById('sa-addr') as HTMLInputElement | null;
+            if (curAddrInp?.value) {
+                const v = parseInt(curAddrInp.value, 16);
+                if (!isNaN(v)) { S.activeStructAddr = v; }
+            }
             renderStructPins();
         });
         document.getElementById('sa-new-type-btn')?.addEventListener('click', () => {
@@ -527,7 +551,6 @@ export function renderStructPins(): void {
             const addr    = parseInt(addrInp.value.replace(/^0x/i, ''), 16);
             if (isNaN(addr)) { addrInp.style.borderColor = 'var(--err)'; return; }
             addrInp.style.borderColor = '';
-            // Auto-fill instance name if empty, unique among existing pin names
             let name = nameInp.value.trim();
             if (!name) {
                 const applyDef = S.structs.find(d => d.id === _applyStructId);
@@ -566,7 +589,24 @@ export function renderStructPins(): void {
     });
 
     wireInstanceCards(sec);
+
+    // ── If a type is being edited, wire up the editor inside the types panel ──
+    if (_editingType) {
+        wireEditorInSec(sec);
+        sec.querySelector<HTMLInputElement>('#se-name')?.focus();
+    }
 }
+
+/** Resets all transient view state for the struct panel and re-renders. Call when switching away and back. */
+export function resetStructViewState(): void {
+    _editingType             = null;
+    _addingPin               = false;
+    _managingTypes           = false;
+    _editingPinId            = null;
+    _editingPinDraftStructId = null;
+    renderStructPins();
+}
+
 /** Get a display string for a field given the requested column display type. */
 function getValForType(r: DecodedField, valType: ColType): string {
     if (!r.hasData) { return '??'; }
@@ -1394,7 +1434,11 @@ export function onSelectionChangeForStruct(): void {
         const addrHex = S.selStart.toString(16).toUpperCase().padStart(8, '0');
         if (_addingPin) {
             const inp = document.getElementById('sa-addr') as HTMLInputElement | null;
-            if (inp) { inp.value = addrHex; }
+            if (inp) {
+                inp.value = addrHex;
+                const confirmBtn = document.getElementById('sa-confirm') as HTMLButtonElement | null;
+                if (confirmBtn) { confirmBtn.disabled = !_applyStructId; }
+            }
         } else if (_editingPinId) {
             const inp = document.querySelector<HTMLInputElement>('.si-pe-addr');
             if (inp) { inp.value = addrHex; }

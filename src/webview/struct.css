@@ -188,6 +188,29 @@
 .se-btns { display: flex; gap: 6px; margin-top: 2px; }
 
 /* ══ Instances panel (#s-struct-pins) ════════════════════════════ */
+#s-struct-pins { padding: 10px 12px; }
+
+/* Sliding two-panel track: main (instances) ←→ types */
+.si-panel-clip {
+    overflow: hidden; /* clips the off-screen panel */
+}
+.si-panel-track {
+    display: flex;
+    width: 200%;
+    transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.si-panel-track.si-showing-types {
+    transform: translateX(-50%);
+}
+.si-main-panel,
+.si-types-panel {
+    width: 50%; /* 50% of 200% = 100% of actual panel width */
+    min-width: 0;
+    flex-shrink: 0;
+}
+.si-types-panel {
+    padding-left: 1px; /* prevent border clipping on slide edge */
+}
 
 /* Header row: title + badge + ⚙ Types + LE/BE tabs + ＋ Add */
 .si-hdr-row {
