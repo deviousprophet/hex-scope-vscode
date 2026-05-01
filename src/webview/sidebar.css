@@ -122,8 +122,7 @@
 }
 
 /* ── Multi-byte interpreter ──────────────────────────────────── */
-.mi-endian     { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
-.mi-endian-lbl { font-size: 10px; color: var(--addr-fg); text-transform: uppercase; letter-spacing: .06em; margin-right: auto; }.endian-tabs {
+.endian-tabs {
     display: flex; gap: 2px;
     background: rgba(0,0,0,.2); border-radius: 3px; padding: 2px;
 }
@@ -146,8 +145,6 @@
 
 /* group — shared 2-col grid so type names and values align across all rows */
 .mi-group     { display: grid; grid-template-columns: auto 1fr; gap: 1px 0; }
-.mi-group-sep { height: 1px; background: rgba(255,255,255,.06); margin: 8px 0; grid-column: 1 / -1; }
-.mi-group-dim { opacity: .3; pointer-events: none; }
 
 /* individual card — spans both grid columns internally */
 .mi-card      { display: contents; }
@@ -170,10 +167,6 @@
 .mi-hex           { font-size: 10px; color: var(--addr-fg); opacity: .65; line-height: 1.2; }
 .mi-hex[data-copy]{ cursor: pointer; }
 .mi-hex[data-copy]:hover { opacity: 1; color: var(--fg); }
-.mi-na   { font-size: 11px; color: var(--addr-fg); opacity: .35; }
-
-/* keep for any remaining references */
-.mt-special { color: var(--non-graphic); font-style: italic; }
 
 /* ── Segment labels ──────────────────────────────────────────── */
 .label-item {
