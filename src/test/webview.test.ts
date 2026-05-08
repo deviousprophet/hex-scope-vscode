@@ -95,8 +95,8 @@ suite('state constants and defaults', () => {
     test('BPR is 16', () => {
         assert.strictEqual(BPR, 16);
     });
-    test('default view is "raw"', () => {
-        assert.strictEqual(S.currentView, 'raw');
+    test('default view is "memory"', () => {
+        assert.strictEqual(S.currentView, 'memory');
     });
     test('default byte order is little-endian', () => {
         assert.strictEqual(S.endian, 'le');
