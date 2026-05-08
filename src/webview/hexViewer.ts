@@ -100,7 +100,7 @@ function render(): void {
                     <option value="addr"  ${S.searchMode === 'addr'  ? 'selected' : ''}>Addr</option>
                 </select>
                 <input id="search-input" type="text" placeholder="Search…" autocomplete="off" spellcheck="false">
-                <button class="nav-btn search-btn" id="btn-search" title="Run search">Search</button>
+                <button class="nav-btn search-btn" id="btn-search" title="Run search" aria-label="Run search">🔍</button>
                 <button class="nav-btn" id="btn-search-config" title="Search settings" aria-haspopup="true" aria-expanded="false">⚙</button>
                 <button class="nav-btn" id="btn-prev"         title="Previous match">▲</button>
                 <button class="nav-btn" id="btn-next"         title="Next match">▼</button>
@@ -110,13 +110,9 @@ function render(): void {
                     <div class="scp-title">Search settings</div>
                     <div class="scp-row">
                         <div class="scp-label">Hex endianness</div>
-                        <div class="scp-toggle-row">
-                            <span class="scp-endian-label ${S.searchEndianness === 'le' ? 'active' : ''}" id="search-endian-label-le">LE</span>
-                            <label class="scp-switch" aria-label="Toggle endianness between LE and BE">
-                                <input id="search-endian-toggle" type="checkbox" ${S.searchEndianness === 'be' ? 'checked' : ''}>
-                                <span class="scp-slider" aria-hidden="true"></span>
-                            </label>
-                            <span class="scp-endian-label ${S.searchEndianness === 'be' ? 'active' : ''}" id="search-endian-label-be">BE</span>
+                        <div class="endian-tabs sa-endian-tabs">
+                            <button id="search-btn-le" class="${S.searchEndianness === 'le' ? 'active' : ''}" type="button">LE</button>
+                            <button id="search-btn-be" class="${S.searchEndianness === 'be' ? 'active' : ''}" type="button">BE</button>
                         </div>
                     </div>
                 </div>
@@ -189,9 +185,8 @@ function render(): void {
     const searchBoxEl = document.getElementById('search-box') as HTMLDivElement;
     const searchCfgBtn = document.getElementById('btn-search-config') as HTMLButtonElement;
     const searchCfgPanel = document.getElementById('search-config-panel') as HTMLDivElement;
-    const endianToggleEl = document.getElementById('search-endian-toggle') as HTMLInputElement;
-    const endianLabelLE = document.getElementById('search-endian-label-le') as HTMLSpanElement;
-    const endianLabelBE = document.getElementById('search-endian-label-be') as HTMLSpanElement;
+    const searchBtnLE = document.getElementById('search-btn-le') as HTMLButtonElement;
+    const searchBtnBE = document.getElementById('search-btn-be') as HTMLButtonElement;
     modeEl .addEventListener('change',  () => { S.searchMode = modeEl.value as typeof S.searchMode; });
     inputEl.addEventListener('keydown', e => {
         if (e.key === 'Enter') {
@@ -216,14 +211,18 @@ function render(): void {
     });
 
     const applyEndianUi = (): void => {
-        endianLabelLE.classList.toggle('active', S.searchEndianness === 'le');
-        endianLabelBE.classList.toggle('active', S.searchEndianness === 'be');
-        endianToggleEl.checked = S.searchEndianness === 'be';
+        searchBtnLE.classList.toggle('active', S.searchEndianness === 'le');
+        searchBtnBE.classList.toggle('active', S.searchEndianness === 'be');
     };
     applyEndianUi();
 
-    endianToggleEl.addEventListener('change', () => {
-        S.searchEndianness = endianToggleEl.checked ? 'be' : 'le';
+    searchBtnLE.addEventListener('click', () => {
+        S.searchEndianness = 'le';
+        applyEndianUi();
+    });
+
+    searchBtnBE.addEventListener('click', () => {
+        S.searchEndianness = 'be';
         applyEndianUi();
     });
 

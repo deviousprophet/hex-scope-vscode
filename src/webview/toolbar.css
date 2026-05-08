@@ -72,26 +72,31 @@
 
 /* Larger arrow buttons for previous/next match (now up/down) */
 #btn-prev, #btn-next {
-    width: 34px; height: 30px; font-size: 15px; border-radius: 4px;
+    width: 30px; height: 26px; font-size: 13px; border-radius: 4px;
+}
+
+#btn-clear-search {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
 }
 
 .search-btn {
-    width: auto;
-    padding: 0 8px;
-    font-size: 11px;
-    background: var(--btn-bg); color: var(--btn-fg);
-    border: 1px solid rgba(255,255,255,.04); border-radius: 3px; cursor: pointer;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    font-size: 12px;
+    line-height: 1;
+    background: transparent;
+    color: var(--fg);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
 }
 
 #match-count { color: var(--fg); font-size: 11px; min-width: 44px; text-align: right; white-space: nowrap; }
 
-.search-btn {
-    width: auto;
-    padding: 0 8px;
-    font-size: 10px;
-}
-
-#match-count { color: var(--non-graphic); font-size: 11px; min-width: 44px; text-align: right; white-space: nowrap; }
+#match-count { color: #ffffff; font-size: 11px; min-width: 44px; text-align: right; white-space: nowrap; }
 
 #search-box { position: relative; }
 
@@ -120,74 +125,11 @@
     text-transform: uppercase;
 }
 
-.scp-row { display: flex; flex-direction: column; gap: 6px; }
+.scp-row { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 
 .scp-label {
     font-size: 11px;
     color: var(--addr-fg);
-}
-
-.scp-toggle-row {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.scp-endian-label {
-    font-size: 11px;
-    color: var(--addr-fg);
-    min-width: 20px;
-    text-align: center;
-    font-weight: 600;
-    transition: color .12s;
-}
-
-.scp-endian-label.active {
-    color: var(--fg);
-}
-
-.scp-switch {
-    position: relative;
-    display: inline-flex;
-    width: 42px;
-    height: 22px;
-}
-
-.scp-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-.scp-slider {
-    position: absolute;
-    inset: 0;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: rgba(0,0,0,.25);
-    cursor: pointer;
-    transition: background .16s, border-color .16s;
-}
-
-.scp-slider::before {
-    content: '';
-    position: absolute;
-    width: 16px;
-    height: 16px;
-    left: 2px;
-    top: 2px;
-    border-radius: 50%;
-    background: var(--fg);
-    transition: transform .16s;
-}
-
-.scp-switch input:checked + .scp-slider {
-    background: rgba(156,220,254,.16);
-    border-color: rgba(156,220,254,.45);
-}
-
-.scp-switch input:checked + .scp-slider::before {
-    transform: translateX(20px);
 }
 
 /* ── Stats bar ───────────────────────────────────────────────── */
