@@ -39,6 +39,7 @@ export interface SegmentLabel {
 }
 
 export type SearchMode = 'hex' | 'ascii' | 'addr';
+export type SearchEndianness = 'be' | 'le';
 
 export type MemRow =
     | { type: 'data'; address: number }

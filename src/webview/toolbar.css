@@ -53,11 +53,6 @@
     border: 1px solid var(--input-bdr); border-radius: 3px;
     padding: 0 4px; height: 22px; font-size: 11px; cursor: pointer;
 }
-#search-endian {
-    background: var(--input-bg); color: var(--fg);
-    border: 1px solid var(--input-bdr); border-radius: 3px;
-    padding: 0 6px; height: 22px; font-size: 11px; cursor: pointer;
-}
 #search-input {
     background: var(--input-bg); color: var(--fg);
     border: 1px solid var(--input-bdr); border-radius: 3px;
@@ -97,6 +92,103 @@
 }
 
 #match-count { color: var(--non-graphic); font-size: 11px; min-width: 44px; text-align: right; white-space: nowrap; }
+
+#search-box { position: relative; }
+
+.search-config-panel {
+    position: absolute;
+    top: calc(100% + 7px);
+    right: 80px;
+    min-width: 220px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel-bg);
+    box-shadow: 0 12px 24px rgba(0,0,0,.34);
+    z-index: 20;
+    display: none;
+}
+
+.search-config-panel.open { display: block; }
+
+.scp-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .03em;
+    margin-bottom: 8px;
+    color: var(--fg);
+    text-transform: uppercase;
+}
+
+.scp-row { display: flex; flex-direction: column; gap: 6px; }
+
+.scp-label {
+    font-size: 11px;
+    color: var(--addr-fg);
+}
+
+.scp-toggle-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.scp-endian-label {
+    font-size: 11px;
+    color: var(--addr-fg);
+    min-width: 20px;
+    text-align: center;
+    font-weight: 600;
+    transition: color .12s;
+}
+
+.scp-endian-label.active {
+    color: var(--fg);
+}
+
+.scp-switch {
+    position: relative;
+    display: inline-flex;
+    width: 42px;
+    height: 22px;
+}
+
+.scp-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.scp-slider {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: rgba(0,0,0,.25);
+    cursor: pointer;
+    transition: background .16s, border-color .16s;
+}
+
+.scp-slider::before {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    left: 2px;
+    top: 2px;
+    border-radius: 50%;
+    background: var(--fg);
+    transition: transform .16s;
+}
+
+.scp-switch input:checked + .scp-slider {
+    background: rgba(156,220,254,.16);
+    border-color: rgba(156,220,254,.45);
+}
+
+.scp-switch input:checked + .scp-slider::before {
+    transform: translateX(20px);
+}
 
 /* ── Stats bar ───────────────────────────────────────────────── */
 #stats-bar {

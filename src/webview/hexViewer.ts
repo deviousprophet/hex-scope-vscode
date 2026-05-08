@@ -9,6 +9,7 @@ import { renderMemHeader, renderMemBody, applySel, scrollTo } from './memoryView
 import { renderInspector, renderBits, renderLabels, updateInspector, updateLabelFormSel } from './sidebar';
 import { renderStructPanel, renderStructPins, onSelectionChangeForStruct, resetStructViewState } from './struct';
 import { initSearch, runSearch, clearSearch, nextMatch, prevMatch, updMC } from './searchEngine';
+import type { SearchEndianness } from './types';
 import { initFlatBytes, buildMemRows }                from './data';
 
 vscode.postMessage({ type: 'ready' });
@@ -98,17 +99,27 @@ function render(): void {
                     <option value="ascii" ${S.searchMode === 'ascii' ? 'selected' : ''}>ASCII</option>
                     <option value="addr"  ${S.searchMode === 'addr'  ? 'selected' : ''}>Addr</option>
                 </select>
-                <select id="search-endian">
-                    <option value="both" selected>Endian: Both</option>
-                    <option value="big">Big-endian</option>
-                    <option value="little">Little-endian</option>
-                </select>
                 <input id="search-input" type="text" placeholder="Search…" autocomplete="off" spellcheck="false">
                 <button class="nav-btn search-btn" id="btn-search" title="Run search">Search</button>
+                <button class="nav-btn" id="btn-search-config" title="Search settings" aria-haspopup="true" aria-expanded="false">⚙</button>
                 <button class="nav-btn" id="btn-prev"         title="Previous match">▲</button>
                 <button class="nav-btn" id="btn-next"         title="Next match">▼</button>
                 <button class="nav-btn" id="btn-clear-search" title="Clear">✕</button>
                 <span id="match-count"></span>
+                <div id="search-config-panel" class="search-config-panel" role="dialog" aria-label="Search settings" aria-hidden="true">
+                    <div class="scp-title">Search settings</div>
+                    <div class="scp-row">
+                        <div class="scp-label">Hex endianness</div>
+                        <div class="scp-toggle-row">
+                            <span class="scp-endian-label ${S.searchEndianness === 'le' ? 'active' : ''}" id="search-endian-label-le">LE</span>
+                            <label class="scp-switch" aria-label="Toggle endianness between LE and BE">
+                                <input id="search-endian-toggle" type="checkbox" ${S.searchEndianness === 'be' ? 'checked' : ''}>
+                                <span class="scp-slider" aria-hidden="true"></span>
+                            </label>
+                            <span class="scp-endian-label ${S.searchEndianness === 'be' ? 'active' : ''}" id="search-endian-label-be">BE</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         <div id="stats-bar"></div>
@@ -175,6 +186,12 @@ function render(): void {
     // Search
     const modeEl  = document.getElementById('search-mode')  as HTMLSelectElement;
     const inputEl = document.getElementById('search-input') as HTMLInputElement;
+    const searchBoxEl = document.getElementById('search-box') as HTMLDivElement;
+    const searchCfgBtn = document.getElementById('btn-search-config') as HTMLButtonElement;
+    const searchCfgPanel = document.getElementById('search-config-panel') as HTMLDivElement;
+    const endianToggleEl = document.getElementById('search-endian-toggle') as HTMLInputElement;
+    const endianLabelLE = document.getElementById('search-endian-label-le') as HTMLSpanElement;
+    const endianLabelBE = document.getElementById('search-endian-label-be') as HTMLSpanElement;
     modeEl .addEventListener('change',  () => { S.searchMode = modeEl.value as typeof S.searchMode; });
     inputEl.addEventListener('keydown', e => {
         if (e.key === 'Enter') {
@@ -187,12 +204,46 @@ function render(): void {
     document.getElementById('btn-next')!.addEventListener('click', nextMatch);
     document.getElementById('btn-clear-search')!.addEventListener('click', clearSearch);
 
+    const setSearchCfgOpen = (open: boolean): void => {
+        searchCfgPanel.classList.toggle('open', open);
+        searchCfgPanel.setAttribute('aria-hidden', String(!open));
+        searchCfgBtn.setAttribute('aria-expanded', String(open));
+    };
+
+    searchCfgBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        setSearchCfgOpen(!searchCfgPanel.classList.contains('open'));
+    });
+
+    const applyEndianUi = (): void => {
+        endianLabelLE.classList.toggle('active', S.searchEndianness === 'le');
+        endianLabelBE.classList.toggle('active', S.searchEndianness === 'be');
+        endianToggleEl.checked = S.searchEndianness === 'be';
+    };
+    applyEndianUi();
+
+    endianToggleEl.addEventListener('change', () => {
+        S.searchEndianness = endianToggleEl.checked ? 'be' : 'le';
+        applyEndianUi();
+    });
+
+    document.addEventListener('click', e => {
+        if (!searchCfgPanel.classList.contains('open')) { return; }
+        const target = e.target as Node;
+        if (!searchBoxEl.contains(target)) {
+            setSearchCfgOpen(false);
+        }
+    });
+
     // Ctrl+F / Cmd+F focuses the search bar; Ctrl+Z undoes last edit
     document.addEventListener('keydown', e => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
             e.preventDefault();
             inputEl.focus();
             inputEl.select();
+        }
+        if (e.key === 'Escape' && searchCfgPanel.classList.contains('open')) {
+            setSearchCfgOpen(false);
         }
         if ((e.ctrlKey || e.metaKey) && e.key === 'z' && S.editMode) {
             e.preventDefault();

@@ -1,14 +1,14 @@
 // Combined SearchEngine + UI glue
 import { S } from './state';
 import { applyMatchHighlights, scrollTo } from './memoryView';
-import type { SearchMode } from './types';
+import type { SearchEndianness, SearchMode } from './types';
 
 export interface SearchRequest {
     mode: SearchMode;
     raw: string;
     addrs: number[];
     getByte: (addr: number) => number | undefined;
-    endianness?: 'big' | 'little' | 'both';
+    endianness?: SearchEndianness;
 }
 
 export interface SearchHandlers {
@@ -60,7 +60,7 @@ export class SearchEngine {
     }
 
     private runByteSearch(token: number, req: SearchRequest, handlers: SearchHandlers): void {
-        const needles = buildNeedles(req.mode, req.raw, req.endianness ?? 'both');
+        const needles = buildNeedles(req.mode, req.raw, req.endianness ?? 'le');
         if (needles.length === 0) {
             this.lastMode = req.mode;
             this.lastByteNeedleLength = 0;
@@ -196,7 +196,7 @@ function normalizeAddrQuery(raw: string): string | null {
     return s.toUpperCase();
 }
 
-function buildNeedles(mode: SearchMode, raw: string, endianness: 'big'|'little'|'both'): number[][] {
+function buildNeedles(mode: SearchMode, raw: string, endianness: SearchEndianness): number[][] {
     if (mode === 'hex') {
         const tokens = raw.replace(/\s/g, '').match(/.{1,2}/g) ?? [];
         const bytes: number[] = [];
@@ -206,14 +206,10 @@ function buildNeedles(mode: SearchMode, raw: string, endianness: 'big'|'little'|
             bytes.push(v);
         }
         if (bytes.length === 0) { return []; }
-        const needles: number[][] = [];
-        if (endianness === 'big' || endianness === 'both') { needles.push(bytes); }
-        if (endianness === 'little' || endianness === 'both') {
-            const rev = [...bytes].reverse();
-            // avoid duplicate when palindrome
-            if (needles.length === 0 || rev.join(',') !== needles[0].join(',')) { needles.push(rev); }
+        if (endianness === 'be') {
+            return [bytes];
         }
-        return needles;
+        return [[...bytes].reverse()];
     }
 
     if (mode === 'ascii') {
@@ -245,15 +241,13 @@ export function runSearch(): void {
     }
 
     applyMatchHighlights();
-    const endiannessEl = document.getElementById('search-endian') as HTMLSelectElement | null;
-    const endianness = (endiannessEl?.value as 'big' | 'little' | 'both') || 'both';
     engine.search(
         {
             mode: S.searchMode,
             raw,
             addrs: S.sortedAddrs,
             getByte: (addr: number) => S.flatBytes.get(addr),
-            endianness,
+            endianness: S.searchEndianness,
         },
         {
             onStatus: updMC,
