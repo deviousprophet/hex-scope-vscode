@@ -8,8 +8,11 @@ import { rerender }                                   from './render';
 import { renderMemHeader, renderMemBody, applySel, scrollTo } from './memoryView';
 import { renderInspector, renderBits, renderLabels, updateInspector, updateLabelFormSel } from './sidebar';
 import { renderStructPanel, renderStructPins, onSelectionChangeForStruct, resetStructViewState } from './struct';
-import { initSearch, runSearch, clearSearch, nextMatch, prevMatch } from './search';
+import { initSearch, runSearch, clearSearch, nextMatch, prevMatch, updMC } from './searchEngine';
+import type { SearchEndianness } from './types';
 import { initFlatBytes, buildMemRows }                from './data';
+
+vscode.postMessage({ type: 'ready' });
 
 // ── Message handler ───────────────────────────────────────────────
 
@@ -19,16 +22,16 @@ window.addEventListener('message', (e: MessageEvent) => {
         case 'init':
             S.parseResult = msg.parseResult as typeof S.parseResult;
             S.labels      = (msg.labels as typeof S.labels) ?? [];
-            S.rawSource   = (msg.rawSource as string) ?? '';
+            S.rawSource   = '';
             S.structs     = (msg.structs as typeof S.structs) ?? [];
             S.structPins  = (msg.structPins as typeof S.structPins) ?? [];
             initFlatBytes();
             buildMemRows();
-            // Choose default view: raw if there are errors, memory if valid
-            const pr = S.parseResult;
-            const fileOk = pr && pr.checksumErrors === 0 && pr.malformedLines === 0;
-            S.currentView = fileOk ? 'memory' : 'raw';
+            S.currentView = 'memory';
             render();
+            break;
+        case 'loadError':
+            renderLoadError(String(msg.message ?? 'Failed to open file.'));
             break;
         case 'addLabel':
             S.labels = [...S.labels, msg.label as typeof S.labels[0]];
@@ -63,7 +66,6 @@ window.addEventListener('message', (e: MessageEvent) => {
             const incoming = {
                 parseResult: msg.parseResult as typeof S.parseResult,
                 labels:      (msg.labels as typeof S.labels) ?? [],
-                rawSource:   (msg.rawSource as string) ?? '',
             };
             if (S.editMode && S.edits.size > 0) {
                 showExternalChangeConflict(incoming);
@@ -81,8 +83,6 @@ function render(): void {
     document.getElementById('app')!.innerHTML = `
         <div id="toolbar">
             <div class="view-tabs">
-                <button id="btn-raw" class="${S.currentView === 'raw'    ? 'active' : ''}">Raw</button>
-                <button id="btn-rec" class="${S.currentView === 'record' ? 'active' : ''}">Records</button>
                 <button id="btn-mem" class="${S.currentView === 'memory' ? 'active' : ''}">Memory</button>
             </div>
             <div class="tb-sep"></div>
@@ -100,21 +100,31 @@ function render(): void {
                     <option value="addr"  ${S.searchMode === 'addr'  ? 'selected' : ''}>Addr</option>
                 </select>
                 <input id="search-input" type="text" placeholder="Search…" autocomplete="off" spellcheck="false">
-                <button class="nav-btn" id="btn-prev"         title="Previous match">‹</button>
-                <button class="nav-btn" id="btn-next"         title="Next match">›</button>
+                <button class="nav-btn search-btn" id="btn-search" title="Run search" aria-label="Run search">🔍</button>
+                <button class="nav-btn" id="btn-search-config" title="Search settings" aria-haspopup="true" aria-expanded="false">⚙</button>
+                <button class="nav-btn" id="btn-prev"         title="Previous match">▲</button>
+                <button class="nav-btn" id="btn-next"         title="Next match">▼</button>
                 <button class="nav-btn" id="btn-clear-search" title="Clear">✕</button>
                 <span id="match-count"></span>
+                <div id="search-config-panel" class="search-config-panel" role="dialog" aria-label="Search settings" aria-hidden="true">
+                    <div class="scp-title">Search settings</div>
+                    <div class="scp-row">
+                        <div class="scp-label">Hex endianness</div>
+                        <div class="endian-tabs sa-endian-tabs">
+                            <button id="search-btn-le" class="${S.searchEndianness === 'le' ? 'active' : ''}" type="button">LE</button>
+                            <button id="search-btn-be" class="${S.searchEndianness === 'be' ? 'active' : ''}" type="button">BE</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         <div id="stats-bar"></div>
         <div id="main-area">
             <div id="content-pane">
-                <div id="record-view" class="${S.currentView === 'record' ? 'visible' : ''}"></div>
                 <div id="memory-view" class="${S.currentView === 'memory' ? 'visible' : ''}">
                     <div id="mem-header"></div>
                     <div id="mem-scroll"><div id="mem-rows"></div></div>
                 </div>
-                <div id="raw-view" class="${S.currentView === 'raw' ? 'visible' : ''}"></div>
             </div>
             <div id="sidebar">
                 <div class="sb-tab-panel ${S.sidebarTab === 'inspector' ? 'active' : ''}" id="sbp-insp">
@@ -135,8 +145,6 @@ function render(): void {
 
     // Toolbar buttons
     document.getElementById('btn-mem')!.addEventListener('click', () => switchView('memory'));
-    document.getElementById('btn-rec')!.addEventListener('click', () => switchView('record'));
-    document.getElementById('btn-raw')!.addEventListener('click', () => switchView('raw'));
 
     // Edit mode toggle
     document.getElementById('btn-edit-mode')!.addEventListener('click', () => {
@@ -174,12 +182,57 @@ function render(): void {
     // Search
     const modeEl  = document.getElementById('search-mode')  as HTMLSelectElement;
     const inputEl = document.getElementById('search-input') as HTMLInputElement;
-    modeEl .addEventListener('change',  () => { S.searchMode = modeEl.value as typeof S.searchMode; runSearch(); });
-    inputEl.addEventListener('input',   () => runSearch());
-    inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') { (e.shiftKey ? prevMatch : nextMatch)(); } });
+    const searchBoxEl = document.getElementById('search-box') as HTMLDivElement;
+    const searchCfgBtn = document.getElementById('btn-search-config') as HTMLButtonElement;
+    const searchCfgPanel = document.getElementById('search-config-panel') as HTMLDivElement;
+    const searchBtnLE = document.getElementById('search-btn-le') as HTMLButtonElement;
+    const searchBtnBE = document.getElementById('search-btn-be') as HTMLButtonElement;
+    modeEl .addEventListener('change',  () => { S.searchMode = modeEl.value as typeof S.searchMode; });
+    inputEl.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            runSearch();
+        }
+    });
+    document.getElementById('btn-search')!.addEventListener('click', runSearch);
     document.getElementById('btn-prev')!.addEventListener('click', prevMatch);
     document.getElementById('btn-next')!.addEventListener('click', nextMatch);
     document.getElementById('btn-clear-search')!.addEventListener('click', clearSearch);
+
+    const setSearchCfgOpen = (open: boolean): void => {
+        searchCfgPanel.classList.toggle('open', open);
+        searchCfgPanel.setAttribute('aria-hidden', String(!open));
+        searchCfgBtn.setAttribute('aria-expanded', String(open));
+    };
+
+    searchCfgBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        setSearchCfgOpen(!searchCfgPanel.classList.contains('open'));
+    });
+
+    const applyEndianUi = (): void => {
+        searchBtnLE.classList.toggle('active', S.searchEndianness === 'le');
+        searchBtnBE.classList.toggle('active', S.searchEndianness === 'be');
+    };
+    applyEndianUi();
+
+    searchBtnLE.addEventListener('click', () => {
+        S.searchEndianness = 'le';
+        applyEndianUi();
+    });
+
+    searchBtnBE.addEventListener('click', () => {
+        S.searchEndianness = 'be';
+        applyEndianUi();
+    });
+
+    document.addEventListener('click', e => {
+        if (!searchCfgPanel.classList.contains('open')) { return; }
+        const target = e.target as Node;
+        if (!searchBoxEl.contains(target)) {
+            setSearchCfgOpen(false);
+        }
+    });
 
     // Ctrl+F / Cmd+F focuses the search bar; Ctrl+Z undoes last edit
     document.addEventListener('keydown', e => {
@@ -187,6 +240,9 @@ function render(): void {
             e.preventDefault();
             inputEl.focus();
             inputEl.select();
+        }
+        if (e.key === 'Escape' && searchCfgPanel.classList.contains('open')) {
+            setSearchCfgOpen(false);
         }
         if ((e.ctrlKey || e.metaKey) && e.key === 'z' && S.editMode) {
             e.preventDefault();
@@ -264,6 +320,17 @@ function render(): void {
     else { renderRawView(); }
 }
 
+function renderLoadError(message: string): void {
+    document.getElementById('app')!.innerHTML = `
+        <div class="loading-shell">
+            <div class="loading-card">
+                <div class="loading-eyebrow">HexScope</div>
+                <div class="loading-title">Could not open file</div>
+                <div class="loading-text">${esc(message)}</div>
+            </div>
+        </div>`;
+}
+
 // ── Stats bar ─────────────────────────────────────────────────────
 
 function renderStats(): void {
@@ -275,7 +342,7 @@ function renderStats(): void {
     el.innerHTML =
         `<span class="si si-fmt"><span class="svl">${fmtLabel}</span></span>` +
         `<span class="si"><span class="slb">Bytes</span><span class="svl">${fmtB(p.totalDataBytes)}</span></span>` +
-        `<span class="si"><span class="slb">Records</span><span class="svl">${p.records.length}</span></span>` +
+        `<span class="si"><span class="slb">Records</span><span class="svl">${p.recordCount ?? p.records.length}</span></span>` +
         `<span class="si"><span class="slb">Segments</span><span class="svl">${p.segments.length}</span></span>` +
         (p.checksumErrors > 0 ? `<span class="si s-err"><span class="slb">Checksum Errors</span><span class="svl">${p.checksumErrors}</span></span>` : '') +
         (p.malformedLines > 0 ? `<span class="si s-err"><span class="slb">Malformed</span><span class="svl">${p.malformedLines}</span></span>` : '') +
@@ -352,6 +419,11 @@ function renderRecordView(): void {
     const el = document.getElementById('record-view');
     if (!el || !S.parseResult) { return; }
 
+    if (S.parseResult.records.length === 0) {
+        el.innerHTML = `<div class="raw-problems" style="margin:10px"><div class="raw-problems-hdr"><span class="raw-problems-title">Record View Unavailable</span></div><div style="padding:10px 12px">Record details are not loaded in the webview. Use Memory view for navigation and editing.</div></div>`;
+        return;
+    }
+
     const isSrec = S.parseResult.format === 'srec';
     const TYPE_LABELS = isSrec ? SREC_TYPE_LABELS : IHEX_TYPE_LABELS;
 
@@ -410,6 +482,11 @@ function renderRecordView(): void {
 function renderRawView(): void {
     const el = document.getElementById('raw-view');
     if (!el) { return; }
+
+    if (!S.rawSource) {
+        el.innerHTML = `<div class="raw-problems" style="margin:10px"><div class="raw-problems-hdr"><span class="raw-problems-title">Raw View Unavailable</span></div><div style="padding:10px 12px">Raw source is not loaded in the webview. Use Memory view for navigation and editing.</div></div>`;
+        return;
+    }
 
     const isSrec = S.parseResult?.format === 'srec';
     const lines = S.rawSource.split(/\r?\n/);
@@ -573,20 +650,22 @@ function switchView(v: 'memory' | 'record' | 'raw'): void {
 
 // ── External file-change helpers ──────────────────────────────────
 
-type IncomingFile = { parseResult: typeof S.parseResult; labels: typeof S.labels; rawSource: string };
+type IncomingFile = {
+    parseResult: typeof S.parseResult;
+    labels: typeof S.labels;
+};
 
 /** Apply an external file change directly (no unsaved edits to worry about). */
 function applyExternalChange(incoming: IncomingFile): void {
     S.parseResult = incoming.parseResult;
     S.labels      = incoming.labels;
-    S.rawSource   = incoming.rawSource;
+    S.rawSource   = '';
     initFlatBytes();
     buildMemRows();
-    const ok = S.parseResult && S.parseResult.checksumErrors === 0 && S.parseResult.malformedLines === 0;
-    S.currentView = ok ? 'memory' : 'raw';
+    S.currentView = 'memory';
     render();
     // Tell the provider it can update its own in-memory raw/parseResult
-    vscode.postMessage({ type: 'reloadAccepted', rawSource: incoming.rawSource });
+    vscode.postMessage({ type: 'reloadAccepted', rawSource: '' });
 }
 
 /** Show a non-destructive conflict banner when external change arrives during edit mode. */
@@ -617,7 +696,7 @@ function showExternalChangeConflict(incoming: IncomingFile): void {
     document.getElementById('ecb-keep')!.addEventListener('click', () => {
         banner.remove();
         // Dismiss — keep current state, tell provider to sync its own copy
-        vscode.postMessage({ type: 'reloadAccepted', rawSource: incoming.rawSource });
+        vscode.postMessage({ type: 'reloadAccepted', rawSource: '' });
     });
 }
 

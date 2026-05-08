@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.2.0] — 2026-05-09
+
+### Added
+
+- Loading screen while opening large files
+- Search settings panel (gear button) with a floating configuration popover
+
+### Changed
+
+- Improved large-file performance and smoother scrolling in Memory view
+- Search now runs on explicit action (Enter or search button) instead of every keystroke
+- Search toolbar refresh: icon search button, smaller match navigation buttons, and clearer match counter visibility
+- Hex search endianness simplified to `LE` / `BE` (default: `LE`)
+- Endianness control style now matches Struct Overlay for a consistent UI
+
+### Fixed
+
+- Fixed jump-to-address behavior for search results, labels, and struct pins in virtualized Memory view
+- Fixed false-positive hex/ASCII matches across non-contiguous memory gaps
+
 ## [2.1.1] — 2026-05-01
 
 ### Changed

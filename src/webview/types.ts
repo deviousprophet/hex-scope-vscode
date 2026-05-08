@@ -20,6 +20,7 @@ export interface SerializedSegment {
 
 export interface SerializedParseResult {
     records: SerializedRecord[];
+    recordCount?: number;
     segments: SerializedSegment[];
     totalDataBytes: number;
     checksumErrors: number;
@@ -38,6 +39,7 @@ export interface SegmentLabel {
 }
 
 export type SearchMode = 'hex' | 'ascii' | 'addr';
+export type SearchEndianness = 'be' | 'le';
 
 export type MemRow =
     | { type: 'data'; address: number }
