@@ -3,7 +3,7 @@
   "displayName": "Hex Scope",
   "publisher": "deviousprophet",
   "description": "Custom editor for Intel HEX (.hex) and Motorola SREC (.srec/.mot/.s19) files with memory grid, byte inspector, hex search, record table, and checksum tools.",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "license": "MIT",
   "repository": {
     "type": "git",
