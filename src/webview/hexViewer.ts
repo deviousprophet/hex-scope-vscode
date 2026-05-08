@@ -8,7 +8,7 @@ import { rerender }                                   from './render';
 import { renderMemHeader, renderMemBody, applySel, scrollTo } from './memoryView';
 import { renderInspector, renderBits, renderLabels, updateInspector, updateLabelFormSel } from './sidebar';
 import { renderStructPanel, renderStructPins, onSelectionChangeForStruct, resetStructViewState } from './struct';
-import { initSearch, runSearch, clearSearch, nextMatch, prevMatch } from './search';
+import { initSearch, runSearch, clearSearch, nextMatch, prevMatch, updMC } from './searchEngine';
 import { initFlatBytes, buildMemRows }                from './data';
 
 vscode.postMessage({ type: 'ready' });
@@ -98,9 +98,15 @@ function render(): void {
                     <option value="ascii" ${S.searchMode === 'ascii' ? 'selected' : ''}>ASCII</option>
                     <option value="addr"  ${S.searchMode === 'addr'  ? 'selected' : ''}>Addr</option>
                 </select>
+                <select id="search-endian">
+                    <option value="both" selected>Endian: Both</option>
+                    <option value="big">Big-endian</option>
+                    <option value="little">Little-endian</option>
+                </select>
                 <input id="search-input" type="text" placeholder="Search…" autocomplete="off" spellcheck="false">
-                <button class="nav-btn" id="btn-prev"         title="Previous match">‹</button>
-                <button class="nav-btn" id="btn-next"         title="Next match">›</button>
+                <button class="nav-btn search-btn" id="btn-search" title="Run search">Search</button>
+                <button class="nav-btn" id="btn-prev"         title="Previous match">▲</button>
+                <button class="nav-btn" id="btn-next"         title="Next match">▼</button>
                 <button class="nav-btn" id="btn-clear-search" title="Clear">✕</button>
                 <span id="match-count"></span>
             </div>
@@ -169,9 +175,14 @@ function render(): void {
     // Search
     const modeEl  = document.getElementById('search-mode')  as HTMLSelectElement;
     const inputEl = document.getElementById('search-input') as HTMLInputElement;
-    modeEl .addEventListener('change',  () => { S.searchMode = modeEl.value as typeof S.searchMode; runSearch(); });
-    inputEl.addEventListener('input',   () => runSearch());
-    inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') { (e.shiftKey ? prevMatch : nextMatch)(); } });
+    modeEl .addEventListener('change',  () => { S.searchMode = modeEl.value as typeof S.searchMode; });
+    inputEl.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            runSearch();
+        }
+    });
+    document.getElementById('btn-search')!.addEventListener('click', runSearch);
     document.getElementById('btn-prev')!.addEventListener('click', prevMatch);
     document.getElementById('btn-next')!.addEventListener('click', nextMatch);
     document.getElementById('btn-clear-search')!.addEventListener('click', clearSearch);

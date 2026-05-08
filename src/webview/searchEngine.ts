@@ -1,3 +1,6 @@
+// Combined SearchEngine + UI glue
+import { S } from './state';
+import { applyMatchHighlights, scrollTo } from './memoryView';
 import type { SearchMode } from './types';
 
 export interface SearchRequest {
@@ -5,6 +8,7 @@ export interface SearchRequest {
     raw: string;
     addrs: number[];
     getByte: (addr: number) => number | undefined;
+    endianness?: 'big' | 'little' | 'both';
 }
 
 export interface SearchHandlers {
@@ -21,7 +25,8 @@ export class SearchEngine {
     private chunkHandle: number | null = null;
 
     private lastMode: SearchMode | null = null;
-    private lastByteNeedle: number[] = [];
+    private lastByteNeedleLength = 0;
+    private lastByteNeedles: number[][] = [];
     private lastByteMatches: number[] = [];
     private lastAddrQuery = '';
     private lastAddrMatches: number[] = [];
@@ -55,20 +60,21 @@ export class SearchEngine {
     }
 
     private runByteSearch(token: number, req: SearchRequest, handlers: SearchHandlers): void {
-        const needle = buildNeedle(req.mode, req.raw);
-        if (needle.length === 0) {
+        const needles = buildNeedles(req.mode, req.raw, req.endianness ?? 'both');
+        if (needles.length === 0) {
             this.lastMode = req.mode;
-            this.lastByteNeedle = [];
+            this.lastByteNeedleLength = 0;
+            this.lastByteNeedles = [];
             this.lastByteMatches = [];
             handlers.onComplete([]);
             return;
         }
 
+        const needleLen = needles[0].length;
         const canRefine =
             this.lastMode === req.mode &&
-            this.lastByteNeedle.length > 0 &&
-            needle.length >= this.lastByteNeedle.length &&
-            startsWithNeedle(needle, this.lastByteNeedle);
+            this.lastByteMatches.length > 0 &&
+            needleLen >= this.lastByteNeedleLength;
 
         const candidates = canRefine ? this.lastByteMatches : req.addrs;
         const matches: number[] = [];
@@ -80,8 +86,8 @@ export class SearchEngine {
             const deadline = performance.now() + SEARCH_CHUNK_BUDGET_MS;
             while (index < candidates.length && performance.now() < deadline) {
                 const startAddr = candidates[index];
-                if (matchSequence(req.getByte, startAddr, needle)) {
-                    matches.push(startAddr);
+                for (const needle of needles) {
+                    if (matchSequence(req.getByte, startAddr, needle)) { matches.push(startAddr); break; }
                 }
                 index++;
             }
@@ -95,7 +101,8 @@ export class SearchEngine {
             if (token !== this.token) { return; }
 
             this.lastMode = req.mode;
-            this.lastByteNeedle = needle;
+            this.lastByteNeedleLength = needleLen;
+            this.lastByteNeedles = needles;
             this.lastByteMatches = matches;
             handlers.onComplete(matches);
         };
@@ -165,7 +172,8 @@ export class SearchEngine {
 
     private resetCache(): void {
         this.lastMode = null;
-        this.lastByteNeedle = [];
+        this.lastByteNeedleLength = 0;
+        this.lastByteNeedles = [];
         this.lastByteMatches = [];
         this.lastAddrQuery = '';
         this.lastAddrMatches = [];
@@ -181,14 +189,6 @@ function matchSequence(getByte: (addr: number) => number | undefined, startAddr:
     return true;
 }
 
-function startsWithNeedle(needle: number[], prefix: number[]): boolean {
-    if (prefix.length > needle.length) { return false; }
-    for (let i = 0; i < prefix.length; i++) {
-        if (needle[i] !== prefix[i]) { return false; }
-    }
-    return true;
-}
-
 function normalizeAddrQuery(raw: string): string | null {
     const s = raw.trim().replace(/^0x/i, '');
     if (s.length === 0) { return null; }
@@ -196,7 +196,7 @@ function normalizeAddrQuery(raw: string): string | null {
     return s.toUpperCase();
 }
 
-function buildNeedle(mode: SearchMode, raw: string): number[] {
+function buildNeedles(mode: SearchMode, raw: string, endianness: 'big'|'little'|'both'): number[][] {
     if (mode === 'hex') {
         const tokens = raw.replace(/\s/g, '').match(/.{1,2}/g) ?? [];
         const bytes: number[] = [];
@@ -205,12 +205,122 @@ function buildNeedle(mode: SearchMode, raw: string): number[] {
             if (isNaN(v) || v < 0 || v > 255) { return []; }
             bytes.push(v);
         }
-        return bytes;
+        if (bytes.length === 0) { return []; }
+        const needles: number[][] = [];
+        if (endianness === 'big' || endianness === 'both') { needles.push(bytes); }
+        if (endianness === 'little' || endianness === 'both') {
+            const rev = [...bytes].reverse();
+            // avoid duplicate when palindrome
+            if (needles.length === 0 || rev.join(',') !== needles[0].join(',')) { needles.push(rev); }
+        }
+        return needles;
     }
 
     if (mode === 'ascii') {
-        return Array.from(new TextEncoder().encode(raw));
+        return [Array.from(new TextEncoder().encode(raw))];
     }
 
     return [];
 }
+
+// -------------------- UI glue (previously in search.ts) --------------------
+
+let _switchToMemory: (() => void) | null = null;
+const engine = new SearchEngine();
+
+export function initSearch(switchToMemory: () => void): void {
+    _switchToMemory = switchToMemory;
+}
+
+export function runSearch(): void {
+    const raw = (document.getElementById('search-input') as HTMLInputElement | null)?.value ?? '';
+    S.matchAddrs = [];
+    S.matchIdx   = -1;
+
+    if (raw.trim() === '') {
+        engine.clear();
+        applyMatchHighlights();
+        updMC();
+        return;
+    }
+
+    applyMatchHighlights();
+    const endiannessEl = document.getElementById('search-endian') as HTMLSelectElement | null;
+    const endianness = (endiannessEl?.value as 'big' | 'little' | 'both') || 'both';
+    engine.search(
+        {
+            mode: S.searchMode,
+            raw,
+            addrs: S.sortedAddrs,
+            getByte: (addr: number) => S.flatBytes.get(addr),
+            endianness,
+        },
+        {
+            onStatus: updMC,
+            onComplete: (matches: number[]) => {
+                S.matchAddrs = matches;
+                S.matchIdx = matches.length > 0 ? 0 : -1;
+                applyMatchHighlights();
+                scrollToMatch();
+                updMC();
+            },
+        }
+    );
+}
+
+export function clearSearch(): void {
+    engine.clear();
+    S.matchAddrs = [];
+    S.matchIdx   = -1;
+    const inp = document.getElementById('search-input') as HTMLInputElement | null;
+    if (inp) { inp.value = ''; }
+    applyMatchHighlights();
+    updMC();
+}
+
+export function nextMatch(): void {
+    if (S.matchAddrs.length === 0) { return; }
+    S.matchIdx = (S.matchIdx + 1) % S.matchAddrs.length;
+    goToMatch();
+}
+
+export function prevMatch(): void {
+    if (S.matchAddrs.length === 0) { return; }
+    S.matchIdx = (S.matchIdx - 1 + S.matchAddrs.length) % S.matchAddrs.length;
+    goToMatch();
+}
+
+export function updMC(statusText?: string): void {
+    updMCInternal(statusText);
+}
+
+function updMCInternal(statusText?: string): void {
+    const el = document.getElementById('match-count');
+    if (!el) { return; }
+    if (statusText) {
+        el.textContent = statusText;
+        return;
+    }
+    if (S.matchAddrs.length === 0) {
+        el.textContent = '';
+    } else {
+        el.textContent = `${S.matchIdx + 1} / ${S.matchAddrs.length}`;
+    }
+}
+
+function goToMatch(): void {
+    if (S.currentView !== 'memory') {
+        if (_switchToMemory) { _switchToMemory(); }
+    } else {
+        applyMatchHighlights();
+    }
+    scrollToMatch();
+    updMC();
+}
+
+function scrollToMatch(): void {
+    if (S.matchIdx >= 0 && S.matchAddrs.length > 0) {
+        scrollTo(S.matchAddrs[S.matchIdx]);
+    }
+}
+

@@ -47,26 +47,54 @@
 /* ── Search box ──────────────────────────────────────────────── */
 #search-box { display: flex; align-items: center; gap: 3px; margin-left: auto; }
 
+
 #search-mode {
-    background: var(--input-bg); color: var(--input-fg);
+    background: var(--input-bg); color: var(--fg);
     border: 1px solid var(--input-bdr); border-radius: 3px;
     padding: 0 4px; height: 22px; font-size: 11px; cursor: pointer;
 }
-#search-input {
-    background: var(--input-bg); color: var(--input-fg);
+#search-endian {
+    background: var(--input-bg); color: var(--fg);
     border: 1px solid var(--input-bdr); border-radius: 3px;
-    padding: 0 7px; height: 22px; width: 148px; outline: none;
-    font-size: 11px; font-family: var(--font-editor); transition: border-color .12s;
+    padding: 0 6px; height: 22px; font-size: 11px; cursor: pointer;
 }
+#search-input {
+    background: var(--input-bg); color: var(--fg);
+    border: 1px solid var(--input-bdr); border-radius: 3px;
+    padding: 0 7px; height: 26px; width: 180px; outline: none;
+    font-size: 12px; font-family: var(--font-editor); transition: border-color .12s;
+}
+#search-input::placeholder { color: var(--non-graphic); }
 #search-input:focus { border-color: var(--focus-bdr); }
 
 .nav-btn {
-    width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
-    background: transparent; color: var(--non-graphic);
-    border: 1px solid transparent; border-radius: 3px;
-    cursor: pointer; font-size: 8px; transition: background .08s, color .08s;
+    width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+    background: transparent; color: var(--fg);
+    border: 1px solid transparent; border-radius: 4px;
+    cursor: pointer; font-size: 13px; transition: background .12s, color .12s;
 }
 .nav-btn:hover { background: var(--hover-bg); color: var(--fg); border-color: var(--border); }
+
+/* Larger arrow buttons for previous/next match (now up/down) */
+#btn-prev, #btn-next {
+    width: 34px; height: 30px; font-size: 15px; border-radius: 4px;
+}
+
+.search-btn {
+    width: auto;
+    padding: 0 8px;
+    font-size: 11px;
+    background: var(--btn-bg); color: var(--btn-fg);
+    border: 1px solid rgba(255,255,255,.04); border-radius: 3px; cursor: pointer;
+}
+
+#match-count { color: var(--fg); font-size: 11px; min-width: 44px; text-align: right; white-space: nowrap; }
+
+.search-btn {
+    width: auto;
+    padding: 0 8px;
+    font-size: 10px;
+}
 
 #match-count { color: var(--non-graphic); font-size: 11px; min-width: 44px; text-align: right; white-space: nowrap; }
 
