@@ -20,6 +20,7 @@ export interface SerializedSegment {
 
 export interface SerializedParseResult {
     records: SerializedRecord[];
+    recordCount?: number;
     segments: SerializedSegment[];
     totalDataBytes: number;
     checksumErrors: number;

@@ -44,29 +44,28 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
         _token: vscode.CancellationToken
     ): Promise<void> {
         webviewPanel.webview.options = { enableScripts: true };
+        webviewPanel.webview.html = this._getHtml(webviewPanel.webview, document.uri);
 
-        let raw = new TextDecoder('utf-8').decode(await vscode.workspace.fs.readFile(document.uri));
-        const format = detectFormat(document.uri, raw);
-        let parseResult: ParseResult = format === 'srec' ? parseSRec(raw) : parseIntelHex(raw);
-
-        webviewPanel.webview.html = this._getHtml(webviewPanel.webview, document.uri, parseResult);
+        let raw = '';
+        let format: 'ihex' | 'srec' = 'ihex';
+        let parseResult: ParseResult | null = null;
+        let webviewReady = false;
 
         const labelKey = `hexScope.labels.${document.uri.toString()}`;
 
         const structKey = `hexScope.structs.${document.uri.toString()}`;
         const structPinKey = `hexScope.structPins.${document.uri.toString()}`;
 
-        const postInit = () => webviewPanel.webview.postMessage({
-            type: 'init',
-            parseResult: serializeParseResult(parseResult, format),
-            labels:      this._context.workspaceState.get(labelKey, []),
-            structs:     this._context.workspaceState.get(structKey, []),
-            structPins:  this._context.workspaceState.get(structPinKey, []),
-            rawSource: raw,
-        });
-
-        // Post initial data to webview
-        postInit();
+        const postInit = () => {
+            if (!webviewReady || !parseResult) { return; }
+            webviewPanel.webview.postMessage({
+                type: 'init',
+                parseResult: serializeParseResult(parseResult, format),
+                labels:      this._context.workspaceState.get(labelKey, []),
+                structs:     this._context.workspaceState.get(structKey, []),
+                structPins:  this._context.workspaceState.get(structPinKey, []),
+            });
+        };
 
         // ── Live reload on external file changes ──────────────────────────
         // suppress the single watcher event caused by our own writes
@@ -92,7 +91,6 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         type: 'externalChange',
                         parseResult: serializeParseResult(newResult, format),
                         labels: this._context.workspaceState.get(labelKey, []),
-                        rawSource: newRaw,
                     });
                     // Update provider-side state only after webview accepts it
                     // (done on 'reloadAccepted' response below)
@@ -106,6 +104,10 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
         // Handle messages from the webview
         webviewPanel.webview.onDidReceiveMessage(async msg => {
             switch (msg.type) {
+                case 'ready':
+                    webviewReady = true;
+                    postInit();
+                    break;
                 case 'copyText':
                     await vscode.env.clipboard.writeText(msg.text);
                     vscode.window.showInformationMessage(`Copied: ${msg.label ?? ''}`);
@@ -144,6 +146,7 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     break;
                 }
                 case 'saveEdits': {
+                    if (!parseResult) { break; }
                     const edits = msg.edits as Array<[number, number]>;
                     const editMap = new Map<number, number>(edits);
                     const newHex = format === 'srec'
@@ -158,6 +161,7 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     break;
                 }
                 case 'repairChecksums': {
+                    if (!parseResult) { break; }
                     const repairedRaw = repairChecksums(raw, parseResult);
                     suppressReload = true;
                     await vscode.workspace.fs.writeFile(document.uri, new TextEncoder().encode(repairedRaw));
@@ -170,12 +174,27 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
                 }
                 case 'reloadAccepted': {
                     // Webview confirmed it is safe to apply the pending external change
-                    raw = msg.rawSource as string;
-                    parseResult = format === 'srec' ? parseSRec(raw) : parseIntelHex(raw);
+                    const acceptedRaw = msg.rawSource as string | undefined;
+                    if (typeof acceptedRaw === 'string' && acceptedRaw.length > 0) {
+                        raw = acceptedRaw;
+                        parseResult = format === 'srec' ? parseSRec(raw) : parseIntelHex(raw);
+                    }
                     break;
                 }
             }
         });
+
+        void (async () => {
+            try {
+                raw = new TextDecoder('utf-8').decode(await vscode.workspace.fs.readFile(document.uri));
+                format = detectFormat(document.uri, raw);
+                parseResult = format === 'srec' ? parseSRec(raw) : parseIntelHex(raw);
+                postInit();
+            } catch (error) {
+                const message = error instanceof Error ? error.message : 'Unknown error';
+                webviewPanel.webview.postMessage({ type: 'loadError', message });
+            }
+        })();
 
         webviewPanel.onDidChangeViewState(e => {
             if (e.webviewPanel.active) {
@@ -192,7 +211,7 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
         });
     }
 
-    private _getHtml(webview: vscode.Webview, _uri: vscode.Uri, _parseResult: ParseResult): string {
+    private _getHtml(webview: vscode.Webview, _uri: vscode.Uri): string {
         const scriptUri = webview.asWebviewUri(
             vscode.Uri.joinPath(this._context.extensionUri, 'dist', 'webview.js')
         );
@@ -220,7 +239,16 @@ ${cssLinks}
     <title>HexScope</title>
 </head>
 <body>
-    <div id="app"></div>
+    <div id="app">
+        <div class="loading-shell" aria-live="polite">
+            <div class="loading-card">
+                <div class="loading-eyebrow">HexScope</div>
+                <div class="loading-title">Opening file</div>
+                <div class="loading-text">Parsing records and building the memory view.</div>
+                <div class="loading-bar" role="presentation"><div class="loading-bar-fill"></div></div>
+            </div>
+        </div>
+    </div>
     <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
@@ -238,18 +266,8 @@ export interface SegmentLabel {
 
 function serializeParseResult(result: ParseResult, format: 'ihex' | 'srec'): SerializedParseResult {
     return {
-        records: result.records.map(r => ({
-            lineNumber: r.lineNumber,
-            raw: r.raw,
-            byteCount: r.byteCount,
-            address: r.address,
-            recordType: r.recordType,
-            data: Array.from(r.data),
-            checksum: r.checksum,
-            checksumValid: r.checksumValid,
-            resolvedAddress: r.resolvedAddress,
-            error: r.error,
-        })),
+        records: [],
+        recordCount: result.records.length,
         segments: result.segments.map(s => ({
             startAddress: s.startAddress,
             data: Array.from(s.data),
@@ -283,6 +301,7 @@ export interface SerializedSegment {
 
 export interface SerializedParseResult {
     records: SerializedRecord[];
+    recordCount?: number;
     segments: SerializedSegment[];
     totalDataBytes: number;
     checksumErrors: number;

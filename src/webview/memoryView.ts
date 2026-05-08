@@ -1,12 +1,23 @@
-// ── Memory View ──────────────────────────────────────────────────
+﻿//  Memory View 
 // Renders the hex-grid memory view: column header, data rows, gap rows,
-// and segment label banners.  Byte-click listeners are injected via callbacks
-// so this module has no upward dependencies on hexViewer.ts.
+// and segment label banners. Uses virtual scrolling to efficiently handle
+// large files by rendering only visible rows + a buffer.
 
 import { S, BPR } from './state';
 import { esc, fmtB, byteClass } from './utils';
+import { calcVisibleRange, calcTotalHeight, calcRowOffset, type VirtualScrollState } from './virtualScroll';
 
-// ── Column header ────────────────────────────────────────────────
+//  Virtual scroll state 
+let vscrollState: VirtualScrollState | null = null;
+let vscrollRenderedRange: [number, number] = [0, 0];
+
+const VIRTUAL_SCROLL_CONFIG = {
+    rowHeight: 20,   // CSS: var(--cell-size)  20px
+    gapHeight: 30,   // CSS: var(--cell-size) * 1.5  30px
+    bufferSize: 10,  // render 10 rows above/below viewport
+};
+
+//  Column header 
 
 export function renderMemHeader(): void {
     const hidden = `<div class="cell-group"><span class="addr-cell">00000000</span></div>`;
@@ -23,7 +34,91 @@ export function renderMemHeader(): void {
         `<div class="cell-group"><span style="${ascHdrStyle}">Decoded text</span></div>`;
 }
 
-// ── Memory body ──────────────────────────────────────────────────
+//  Virtual scroll rendering 
+
+function renderVisibleRows(): void {
+    if (!vscrollState) { return; }
+
+    const [startIdx, endIdx] = calcVisibleRange(vscrollState);
+
+    // No change in rendered range? Skip
+    if (startIdx === vscrollRenderedRange[0] && endIdx === vscrollRenderedRange[1]) { return; }
+    vscrollRenderedRange = [startIdx, endIdx];
+
+    const container = document.getElementById('mem-rows')!;
+    const scrollContainer = document.getElementById('mem-scroll')!;
+    const labelMap = buildLabelMap();
+
+    // Calculate offset for top spacer
+    const topOffset = calcRowOffset(startIdx, vscrollState);
+
+    const parts: string[] = [];
+
+    // Top spacer (invisible, maintains scroll height ratio)
+    if (topOffset > 0) {
+        parts.push(`<div style="height:${topOffset}px"></div>`);
+    }
+
+    // Render only visible rows
+    for (let i = startIdx; i < endIdx && i < S.memRows.length; i++) {
+        const row = S.memRows[i];
+        if (row.type === 'gap') {
+            const f = row.from.toString(16).toUpperCase().padStart(8, '0');
+            const t = row.to.toString(16).toUpperCase().padStart(8, '0');
+            parts.push(`<div class="gap-row">
+                <span class="gap-dots"></span>
+                <span class="gap-range">0x${f}  0x${t}</span>
+                <span class="gap-size">${fmtB(row.bytes)} unmapped</span>
+            </div>`);
+        } else {
+            for (const lbl of (labelMap.get(row.address) ?? [])) {
+                parts.push(`<div class="seg-banner" style="border-color:${lbl.color};background:${lbl.color}14;color:${lbl.color}">
+                    <span class="sb-name">${esc(lbl.name)}</span>
+                    <span class="sb-meta">0x${lbl.startAddress.toString(16).toUpperCase().padStart(8, '0')}  ${fmtB(lbl.length)}</span>
+                </div>`);
+            }
+            parts.push(renderRow(row.address));
+        }
+    }
+
+    // Bottom spacer
+    const totalHeight = calcTotalHeight(vscrollState);
+    const bottomOffset = totalHeight - calcRowOffset(endIdx, vscrollState);
+    if (bottomOffset > 0) {
+        parts.push(`<div style="height:${bottomOffset}px"></div>`);
+    }
+
+    container.innerHTML = parts.join('');
+
+    // Re-attach interaction callbacks
+    const onHexDown = (scrollContainer as any)._hexDownCallback;
+    const onHexCtx = (scrollContainer as any)._hexCtxCallback;
+
+    if (onHexDown || onHexCtx) {
+        container.querySelectorAll<HTMLElement>('.data-cell[data-addr]').forEach(el => {
+            if (onHexDown) {
+                el.addEventListener('mousedown', e => onHexDown(e as MouseEvent, el));
+            }
+            if (onHexCtx) {
+                el.addEventListener('contextmenu', e => { onHexCtx(e as MouseEvent, el); e.preventDefault(); });
+            }
+        });
+        container.querySelectorAll<HTMLElement>('.char-cell[data-addr]').forEach(el => {
+            if (onHexDown) {
+                el.addEventListener('mousedown', e => onHexDown(e as MouseEvent, el));
+            }
+            if (onHexCtx) {
+                el.addEventListener('contextmenu', e => { onHexCtx(e as MouseEvent, el); e.preventDefault(); });
+            }
+        });
+    }
+
+    // Apply search and selection highlights
+    applyMatchHighlights();
+    applySel();
+}
+
+//  Memory body 
 
 export function renderMemBody(
     onHexDown: (e: MouseEvent, el: HTMLElement) => void,
@@ -36,45 +131,27 @@ export function renderMemBody(
         return;
     }
 
-    const labelMap = buildLabelMap();
-    const parts: string[] = [];
+    // Initialize virtual scroll state
+    const scrollContainer = document.getElementById('mem-scroll')!;
 
-    for (const row of S.memRows) {
-        if (row.type === 'gap') {
-            const f = row.from.toString(16).toUpperCase().padStart(8, '0');
-            const t = row.to.toString(16).toUpperCase().padStart(8, '0');
-            parts.push(`<div class="gap-row">
-                <span class="gap-dots">···</span>
-                <span class="gap-range">0x${f} – 0x${t}</span>
-                <span class="gap-size">${fmtB(row.bytes)} unmapped</span>
-            </div>`);
-        } else {
-            for (const lbl of (labelMap.get(row.address) ?? [])) {
-                parts.push(`<div class="seg-banner" style="border-color:${lbl.color};background:${lbl.color}14;color:${lbl.color}">
-                    <span class="sb-name">${esc(lbl.name)}</span>
-                    <span class="sb-meta">0x${lbl.startAddress.toString(16).toUpperCase().padStart(8, '0')} · ${fmtB(lbl.length)}</span>
-                </div>`);
-            }
-            parts.push(renderRow(row.address));
-        }
-    }
+    vscrollState = {
+        containerHeight: scrollContainer.clientHeight,
+        rowHeight: VIRTUAL_SCROLL_CONFIG.rowHeight,
+        gapHeight: VIRTUAL_SCROLL_CONFIG.gapHeight,
+        scrollTop: scrollContainer.scrollTop,
+        bufferSize: VIRTUAL_SCROLL_CONFIG.bufferSize,
+        visibleRowIndices: [0, 0],
+    };
+    vscrollRenderedRange = [-1, -1];
 
-    container.innerHTML = parts.join('');
+    // Store callbacks for scroll listener
+    (scrollContainer as any)._hexDownCallback = onHexDown;
+    (scrollContainer as any)._hexCtxCallback = onHexCtx;
 
-    // Attach caller-provided interaction callbacks
-    container.querySelectorAll<HTMLElement>('.data-cell[data-addr]').forEach(el => {
-        el.addEventListener('mousedown', e => onHexDown(e as MouseEvent, el));
-        el.addEventListener('contextmenu', e => { onHexCtx(e as MouseEvent, el); e.preventDefault(); });
-    });
-    container.querySelectorAll<HTMLElement>('.char-cell[data-addr]').forEach(el => {
-        el.addEventListener('mousedown', e => onHexDown(e as MouseEvent, el));
-        el.addEventListener('contextmenu', e => { onHexCtx(e as MouseEvent, el); e.preventDefault(); });
-    });
+    // Initial render of visible rows
+    renderVisibleRows();
 
-    applyMatchHighlights();
-    applySel();
-
-    // Column hover — set up once per container lifetime
+    // Column hover  set up once per container lifetime
     if (!container.dataset.colHoverInit) {
         container.dataset.colHoverInit = '1';
         const hdr = document.getElementById('mem-header')!;
@@ -97,9 +174,19 @@ export function renderMemBody(
         });
         container.addEventListener('mouseleave', () => setCol(null));
     }
+
+    // Set up scroll listener for virtual scrolling (only once)
+    if (!scrollContainer.dataset.vscrollInit) {
+        scrollContainer.dataset.vscrollInit = '1';
+        scrollContainer.addEventListener('scroll', () => {
+            if (!vscrollState) { return; }
+            vscrollState.scrollTop = scrollContainer.scrollTop;
+            renderVisibleRows();
+        });
+    }
 }
 
-// ── Single data row ──────────────────────────────────────────────
+//  Single data row 
 
 function renderRow(base: number): string {
     const hexCells: string[] = [];
@@ -118,7 +205,7 @@ function renderRow(base: number): string {
             const dirty = S.edits.has(addr) ? ' dirty' : '';
             hexCells.push(`<span class="data-cell ${byteClass(val)}${dirty}" data-col="${col}" data-addr="${ah}" data-val="${val}">${hex}</span>`);
             const p = val >= 0x20 && val < 0x7F;
-            chrCells.push(`<span class="char-cell ${p ? 'cp' : 'cd'}${dirty}" data-col="${col}" data-addr="${ah}">${p ? esc(String.fromCharCode(val)) : '·'}</span>`);
+            chrCells.push(`<span class="char-cell ${p ? 'cp' : 'cd'}${dirty}" data-col="${col}" data-addr="${ah}">${p ? esc(String.fromCharCode(val)) : ''}</span>`);
         }
     }
 
@@ -129,7 +216,7 @@ function renderRow(base: number): string {
     </div>`;
 }
 
-// ── Selection highlight ──────────────────────────────────────────
+//  Selection highlight 
 
 export function applySel(): void {
     document.querySelectorAll<HTMLElement>('[data-addr]').forEach(el => {
@@ -140,7 +227,7 @@ export function applySel(): void {
     });
 }
 
-// ── Match highlight ──────────────────────────────────────────────
+//  Match highlight 
 
 export function applyMatchHighlights(): void {
     document.querySelectorAll('.data-cell, .char-cell').forEach(el => el.classList.remove('match', 'amatch'));
@@ -175,15 +262,42 @@ function getNeedleLen(): number | null {
     return new TextEncoder().encode(q).length || null;
 }
 
-// ── Scroll ───────────────────────────────────────────────────────
+//  Scroll 
 
 export function scrollTo(addr: number): void {
     const row = addr - (addr % BPR);
-    const el  = document.querySelector<HTMLElement>(`.data-row[data-row="${row}"]`);
+    const scrollContainer = document.getElementById('mem-scroll');
+    if (!scrollContainer) { return; }
+
+    if (!vscrollState) {
+        const el = document.querySelector<HTMLElement>(`.data-row[data-row="${row}"]`);
+        if (el) { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+        return;
+    }
+
+    const rowIndex = findRowIndex(row);
+    if (rowIndex < 0) { return; }
+
+    const targetTop = Math.max(0, calcRowOffset(rowIndex, vscrollState) - vscrollState.rowHeight * 2);
+    vscrollState.scrollTop = targetTop;
+    scrollContainer.scrollTop = targetTop;
+    renderVisibleRows();
+
+    const el = document.querySelector<HTMLElement>(`.data-row[data-row="${row}"]`);
     if (el) { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
 }
 
-// ── Label map ────────────────────────────────────────────────────
+function findRowIndex(rowBase: number): number {
+    for (let i = 0; i < S.memRows.length; i++) {
+        const row = S.memRows[i];
+        if (row.type === 'data' && row.address === rowBase) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+//  Label map 
 
 function buildLabelMap(): Map<number, typeof S.labels> {
     const m = new Map<number, typeof S.labels>();

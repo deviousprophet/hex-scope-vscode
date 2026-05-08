@@ -2,10 +2,11 @@
 // Hex / ASCII / UTF-8 search with match navigation
 
 import { S } from './state';
-import { rerender } from './render';
 import { applyMatchHighlights, scrollTo } from './memoryView';
+import { SearchEngine } from './searchEngine';
 
 let _switchToMemory: (() => void) | null = null;
+const engine = new SearchEngine();
 
 export function initSearch(switchToMemory: () => void): void {
     _switchToMemory = switchToMemory;
@@ -18,40 +19,36 @@ export function runSearch(): void {
     S.matchAddrs = [];
     S.matchIdx   = -1;
 
-    if (raw.trim() === '') { applyMatchHighlights(); updMC(); return; }
-
-    if (S.searchMode === 'addr') {
-        const addr = parseAddr(raw.trim());
-        if (addr !== null && S.flatBytes.has(addr)) {
-            S.matchAddrs = [addr];
-            S.matchIdx   = 0;
-        }
+    if (raw.trim() === '') {
+        engine.clear();
         applyMatchHighlights();
-        scrollToMatch();
         updMC();
         return;
     }
 
-    const needle = buildNeedle(raw);
-
-    if (needle.length === 0) { applyMatchHighlights(); updMC(); return; }
-
-    const addrs = S.sortedAddrs;
-    for (let i = 0; i <= addrs.length - needle.length; i++) {
-        let match = true;
-        for (let j = 0; j < needle.length; j++) {
-            if (S.flatBytes.get(addrs[i + j]) !== needle[j]) { match = false; break; }
-        }
-        if (match) { S.matchAddrs.push(addrs[i]); }
-    }
-
-    if (S.matchAddrs.length > 0) { S.matchIdx = 0; }
     applyMatchHighlights();
-    scrollToMatch();
-    updMC();
+    engine.search(
+        {
+            mode: S.searchMode,
+            raw,
+            addrs: S.sortedAddrs,
+            getByte: (addr: number) => S.flatBytes.get(addr),
+        },
+        {
+            onStatus: updMC,
+            onComplete: (matches: number[]) => {
+                S.matchAddrs = matches;
+                S.matchIdx = matches.length > 0 ? 0 : -1;
+                applyMatchHighlights();
+                scrollToMatch();
+                updMC();
+            },
+        }
+    );
 }
 
 export function clearSearch(): void {
+    engine.clear();
     S.matchAddrs = [];
     S.matchIdx   = -1;
     const inp = document.getElementById('search-input') as HTMLInputElement | null;
@@ -72,9 +69,17 @@ export function prevMatch(): void {
     goToMatch();
 }
 
-export function updMC(): void {
+export function updMC(statusText?: string): void {
+    updMCInternal(statusText);
+}
+
+function updMCInternal(statusText?: string): void {
     const el = document.getElementById('match-count');
     if (!el) { return; }
+    if (statusText) {
+        el.textContent = statusText;
+        return;
+    }
     if (S.matchAddrs.length === 0) {
         el.textContent = '';
     } else {
@@ -98,27 +103,4 @@ function scrollToMatch(): void {
     if (S.matchIdx >= 0 && S.matchAddrs.length > 0) {
         scrollTo(S.matchAddrs[S.matchIdx]);
     }
-}
-
-function buildNeedle(raw: string): number[] {
-    const mode = S.searchMode;
-    if (mode === 'hex') {
-        const tokens = raw.replace(/\s/g, '').match(/.{1,2}/g) ?? [];
-        const bytes: number[] = [];
-        for (const tok of tokens) {
-            const v = parseInt(tok, 16);
-            if (isNaN(v) || v < 0 || v > 255) { return []; }
-            bytes.push(v);
-        }
-        return bytes;
-    }
-    // ascii / utf8 — encode as UTF-8
-    return Array.from(new TextEncoder().encode(raw));
-}
-
-function parseAddr(raw: string): number | null {
-    const s = raw.replace(/^0x/i, '');
-    if (!/^[0-9a-fA-F]{1,8}$/.test(s)) { return null; }
-    const v = parseInt(s, 16);
-    return isNaN(v) ? null : v;
 }
