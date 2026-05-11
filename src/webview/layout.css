@@ -44,25 +44,3 @@
 /* ── Sidebar tab panels ─────────────────────────────────────────── */
 .sb-tab-panel { flex: 1; overflow-y: auto; overflow-x: hidden; display: none; min-height: 0; }
 .sb-tab-panel.active { display: block; }
-
-/* ── Locked state (external change pending) ─────────────────────── */
-#app.locked-due-to-external-change #main-area {
-    opacity: 0.5;
-    position: relative;
-}
-
-#app.locked-due-to-external-change #toolbar {
-    opacity: 0.5;
-}
-
-#app.locked-due-to-external-change #sidebar {
-    opacity: 0.5;
-}
-
-/* Banners remain fully visible and interactive */
-#app.locked-due-to-external-change .ext-conflict-banner,
-#app.locked-due-to-external-change .ext-reload-banner,
-#app.locked-due-to-external-change .ext-error-banner {
-    opacity: 1;
-    z-index: 100;
-}

@@ -2,7 +2,7 @@
   "name": "vscode-hex-scope",
   "displayName": "Hex Scope",
   "publisher": "deviousprophet",
-  "description": "VS Code extension for viewing and analyzing firmware files (HEX, SREC) with hex grid, search, patching.",
+  "description": "Custom editor for Intel HEX (.hex) and Motorola SREC (.srec/.mot/.s19) files with memory grid, byte inspector, hex search, record table, and checksum tools.",
   "version": "2.2.0",
   "license": "MIT",
   "repository": {
@@ -85,88 +85,52 @@
         "priority": "option"
       }
     ],
-    "submenus": [
-      {
-        "id": "hexScope.actions",
-        "label": "HexScope"
-      }
-    ],
     "commands": [
       {
         "command": "hexScope.addSegmentLabel",
-        "title": "Add Segment Label",
-        "category": "HexScope"
+        "title": "HexScope: Add Segment Label"
       },
       {
         "command": "hexScope.copyAsHexString",
-        "title": "Copy Selection as Hex String",
-        "category": "HexScope"
+        "title": "HexScope: Copy Selection as Hex String"
       },
       {
         "command": "hexScope.copyAsCArray",
-        "title": "Copy Selection as C Array",
-        "category": "HexScope"
+        "title": "HexScope: Copy Selection as C Array"
       },
       {
         "command": "hexScope.copyAsAscii",
-        "title": "Copy Selection as ASCII",
-        "category": "HexScope"
+        "title": "HexScope: Copy Selection as ASCII"
       },
       {
         "command": "hexScope.copyRawRecord",
-        "title": "Copy Raw HEX Record",
-        "category": "HexScope"
-      },
-      {
-        "command": "hexScope.quickRepair",
-        "title": "Quick Repair Checksums",
-        "category": "HexScope"
+        "title": "HexScope: Copy Raw HEX Record"
       },
       {
         "command": "hexScope.openInHexScope",
         "title": "Open with HexScope Viewer",
-        "icon": "$(symbol-misc)",
-        "category": "HexScope"
+        "icon": "$(symbol-misc)"
       }
     ],
     "menus": {
       "explorer/context": [
         {
-          "submenu": "hexScope.actions",
-          "when": "(resourceExtname == .hex || resourceExtname == .srec || resourceExtname == .mot || resourceExtname == .s19 || resourceExtname == .s28 || resourceExtname == .s37)",
+          "command": "hexScope.openInHexScope",
+          "when": "(resourceExtname == .hex || resourceExtname == .srec || resourceExtname == .mot || resourceExtname == .s19 || resourceExtname == .s28 || resourceExtname == .s37) && activeCustomEditorId != 'hexScope.hexEditor'",
           "group": "navigation"
         }
       ],
       "editor/title": [
         {
-          "submenu": "hexScope.actions",
-          "when": "(resourceExtname == .hex || resourceExtname == .srec || resourceExtname == .mot || resourceExtname == .s19 || resourceExtname == .s28 || resourceExtname == .s37) && activeEditorIsNotPreview",
+          "command": "hexScope.openInHexScope",
+          "when": "(resourceExtname == .hex || resourceExtname == .srec || resourceExtname == .mot || resourceExtname == .s19 || resourceExtname == .s28 || resourceExtname == .s37) && activeEditorIsNotPreview && activeCustomEditorId != 'hexScope.hexEditor'",
           "group": "navigation"
         }
       ],
       "editor/title/context": [
         {
-          "submenu": "hexScope.actions",
-          "when": "(resourceExtname == .hex || resourceExtname == .srec || resourceExtname == .mot || resourceExtname == .s19 || resourceExtname == .s28 || resourceExtname == .s37)",
-          "group": "navigation"
-        }
-      ],
-      "editor/context": [
-        {
-          "submenu": "hexScope.actions",
-          "when": "(resourceExtname == .hex || resourceExtname == .srec || resourceExtname == .mot || resourceExtname == .s19 || resourceExtname == .s28 || resourceExtname == .s37) && activeCustomEditorId != 'hexScope.hexEditor'",
-          "group": "navigation"
-        }
-      ],
-      "hexScope.actions": [
-        {
           "command": "hexScope.openInHexScope",
-          "when": "resourceExtname == .hex || resourceExtname == .srec || resourceExtname == .mot || resourceExtname == .s19 || resourceExtname == .s28 || resourceExtname == .s37",
-          "group": "navigation"
-        },
-        {
-          "command": "hexScope.quickRepair",
-          "when": "resourceExtname == .hex || resourceExtname == .srec || resourceExtname == .mot || resourceExtname == .s19 || resourceExtname == .s28 || resourceExtname == .s37",
+          "when": "(resourceExtname == .hex || resourceExtname == .srec || resourceExtname == .mot || resourceExtname == .s19 || resourceExtname == .s28 || resourceExtname == .s37) && activeCustomEditorId != 'hexScope.hexEditor'",
           "group": "navigation"
         }
       ]
