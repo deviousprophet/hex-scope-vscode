@@ -22,7 +22,6 @@ window.addEventListener('message', (e: MessageEvent) => {
         case 'init':
             S.parseResult = msg.parseResult as typeof S.parseResult;
             S.labels      = (msg.labels as typeof S.labels) ?? [];
-            S.rawSource   = '';
             S.structs     = (msg.structs as typeof S.structs) ?? [];
             S.structPins  = (msg.structPins as typeof S.structPins) ?? [];
             initFlatBytes();
@@ -52,30 +51,123 @@ window.addEventListener('message', (e: MessageEvent) => {
             break;
         case 'savedEdits':
             // Extension confirmed the file was written — clear edits and exit edit mode
+            S.parseResult = msg.parseResult as typeof S.parseResult;
+            initFlatBytes();
+            buildMemRows();
             S.edits.clear();
             S.undoStack.length = 0;
             S.editMode = false;
             document.getElementById('btn-edit-mode')!.style.display = '';
             document.getElementById('edit-mode-group')!.style.display = 'none';
             updateDirtyBar();
+            renderStats();
             if (S.currentView === 'memory') { memRerender(); }
+            else if (S.currentView === 'record') { renderRecordView(); }
             break;
         case 'externalChange': {
             // File changed externally while the webview is open.
-            // If the user has unsaved edits, ask them what to do instead of silently reloading.
+            // Lock the view and show conflict decision banner.
             const incoming = {
                 parseResult: msg.parseResult as typeof S.parseResult,
                 labels:      (msg.labels as typeof S.labels) ?? [],
             };
+            S.lockedDueToExternalChange = true;
+            removeAllExternalChangeBanners();
+            updateLockState();
             if (S.editMode && S.edits.size > 0) {
                 showExternalChangeConflict(incoming);
             } else {
-                applyExternalChange(incoming);
+                showExternalChangeReloadBanner(incoming);
             }
+            break;
+        }
+        case 'externalChangeError': {
+            // File changed externally and became invalid (checksum/malformed errors)
+            // Update state with the new (invalid) data and show error banner
+            const checksumErrors = msg.checksumErrors as number;
+            const malformedLines = msg.malformedLines as number;
+            const errorCount = msg.errorCount as number;
+            const canQuickRepair = msg.canQuickRepair as boolean;
+            
+            // Update with the new external data (even though it has errors)
+            S.parseResult = msg.parseResult as typeof S.parseResult;
+            S.labels      = (msg.labels as typeof S.labels) ?? [];
+            initFlatBytes();
+            buildMemRows();
+            
+            S.lockedDueToExternalChange = true;
+            removeAllExternalChangeBanners();
+            updateLockState();
+            
+            // Discard any unsaved edits (can't merge with invalid content)
+            if (S.editMode && S.edits.size > 0) {
+                S.edits.clear();
+                S.undoStack.length = 0;
+                S.editMode = false;
+            }
+            
+            // Show error banner with action buttons
+            showExternalChangeError(checksumErrors, malformedLines, errorCount, canQuickRepair);
+            
+            // Rerender current view to show the new (invalid) data
+            if (S.currentView === 'memory') { memRerender(); }
+            else if (S.currentView === 'record') { renderRecordView(); }
+            break;
+        }
+        case 'repairComplete': {
+            // Checksums were repaired and file reloaded successfully
+            S.parseResult = msg.parseResult as typeof S.parseResult;
+            initFlatBytes();
+            buildMemRows();
+            // Clear edit mode and edits
+            S.edits.clear();
+            S.undoStack.length = 0;
+            S.editMode = false;
+            // Remove the error banner and unlock
+            document.getElementById('ext-error-banner')?.remove();
+            S.lockedDueToExternalChange = false;
+            updateLockState();
+            updateEditControls();
+            updateDirtyBar();
+            renderStats();
+            if (S.currentView === 'memory') { rerender.memory(); }
+            else if (S.currentView === 'record') { renderRecordView(); }
             break;
         }
     }
 });
+
+// ── Helper: apply external change and unlock ──────────────────────
+
+function applyExternalChangeAndUnlock(incoming: IncomingFile): void {
+    S.parseResult = incoming.parseResult;
+    S.labels      = incoming.labels;
+    initFlatBytes();
+    buildMemRows();
+    S.currentView = 'memory';
+    S.lockedDueToExternalChange = false;
+    updateLockState();
+    render();
+    vscode.postMessage({ type: 'reloadAccepted' });
+}
+
+// ── Helper: update edit controls visibility ──────────────────────
+
+function updateEditControls(): void {
+    const inMemory = S.currentView === 'memory';
+    document.getElementById('btn-edit-mode')!.style.display = inMemory ? '' : 'none';
+    document.getElementById('edit-mode-group')!.style.display = inMemory && S.editMode ? '' : 'none';
+}
+
+// ── Lock click interception ──────────────────────────────────────
+
+function preventClickWhenLocked(e: Event): void {
+    if (S.lockedDueToExternalChange) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+    }
+}
 
 // ── Main render ───────────────────────────────────────────────────
 
@@ -84,6 +176,7 @@ function render(): void {
         <div id="toolbar">
             <div class="view-tabs">
                 <button id="btn-mem" class="${S.currentView === 'memory' ? 'active' : ''}">Memory</button>
+                <button id="btn-rec" class="${S.currentView === 'record' ? 'active' : ''}">Records</button>
             </div>
             <div class="tb-sep"></div>
             <button id="btn-edit-mode" class="tb-edit-btn" title="Enter edit mode">&#11041; Edit</button>
@@ -125,6 +218,7 @@ function render(): void {
                     <div id="mem-header"></div>
                     <div id="mem-scroll"><div id="mem-rows"></div></div>
                 </div>
+                <div id="record-view" class="${S.currentView === 'record' ? 'visible' : ''}"></div>
             </div>
             <div id="sidebar">
                 <div class="sb-tab-panel ${S.sidebarTab === 'inspector' ? 'active' : ''}" id="sbp-insp">
@@ -145,12 +239,23 @@ function render(): void {
 
     // Toolbar buttons
     document.getElementById('btn-mem')!.addEventListener('click', () => switchView('memory'));
+    document.getElementById('btn-rec')!.addEventListener('click', () => switchView('record'));
+    updateEditControls();
+
+    // Setup persistent lock interception listeners (check flag on each click)
+    const mainArea = document.getElementById('main-area');
+    const toolbar = document.getElementById('toolbar');
+    if (mainArea) {
+        mainArea.addEventListener('click', preventClickWhenLocked, { capture: true });
+    }
+    if (toolbar) {
+        toolbar.addEventListener('click', preventClickWhenLocked, { capture: true });
+    }
 
     // Edit mode toggle
     document.getElementById('btn-edit-mode')!.addEventListener('click', () => {
         S.editMode = true;
-        document.getElementById('btn-edit-mode')!.style.display = 'none';
-        document.getElementById('edit-mode-group')!.style.display = '';
+        updateEditControls();
         updateDirtyBar();
         if (S.currentView === 'memory') { memRerender(); }
     });
@@ -166,8 +271,7 @@ function render(): void {
         S.edits.clear();
         S.undoStack.length = 0;
         S.editMode = false;
-        document.getElementById('btn-edit-mode')!.style.display = '';
-        document.getElementById('edit-mode-group')!.style.display = 'none';
+        updateEditControls();
         updateDirtyBar();
         if (S.currentView === 'memory') { memRerender(); }
         updateInspector();
@@ -317,7 +421,6 @@ function render(): void {
 
     if (S.currentView === 'memory') { memRerender(); }
     else if (S.currentView === 'record') { renderRecordView(); }
-    else { renderRawView(); }
 }
 
 function renderLoadError(message: string): void {
@@ -337,16 +440,12 @@ function renderStats(): void {
     const el = document.getElementById('stats-bar');
     if (!el || !S.parseResult) { return; }
     const p = S.parseResult;
-    const ok = p.checksumErrors === 0 && p.malformedLines === 0;
     const fmtLabel = p.format === 'srec' ? 'SREC' : 'IHEX';
     el.innerHTML =
         `<span class="si si-fmt"><span class="svl">${fmtLabel}</span></span>` +
         `<span class="si"><span class="slb">Bytes</span><span class="svl">${fmtB(p.totalDataBytes)}</span></span>` +
         `<span class="si"><span class="slb">Records</span><span class="svl">${p.recordCount ?? p.records.length}</span></span>` +
-        `<span class="si"><span class="slb">Segments</span><span class="svl">${p.segments.length}</span></span>` +
-        (p.checksumErrors > 0 ? `<span class="si s-err"><span class="slb">Checksum Errors</span><span class="svl">${p.checksumErrors}</span></span>` : '') +
-        (p.malformedLines > 0 ? `<span class="si s-err"><span class="slb">Malformed</span><span class="svl">${p.malformedLines}</span></span>` : '') +
-        (ok ? `<span class="si s-ok">✓ Valid</span>` : `<span class="si s-invalid">✗ Invalid</span>`);
+    `<span class="si"><span class="slb">Segments</span><span class="svl">${p.segments.length}</span></span>`;
 }
 
 // ── Memory view ───────────────────────────────────────────────────
@@ -451,12 +550,11 @@ function renderRecordView(): void {
                 ? `<span class="cok">${r.checksum.toString(16).toUpperCase().padStart(2, '0')}</span>`
                 : `<span class="cerr">${r.checksum.toString(16).toUpperCase().padStart(2, '0')}</span><span class="cerr-tag">checksum error</span>`;
         const rowClass = (r.error || !r.checksumValid) ? ' class="rerr"' : '';
-        const gotoAttr = isData ? ` data-goto="${ra}"` : '';
         const addrCell = isData
-            ? `<td class="raddr"${gotoAttr}>${ra}</td>`
+            ? `<td class="raddr">${ra}</td>`
             : `<td class="raddr raddr-empty">—</td>`;
 
-        return `<tr${gotoAttr}${rowClass}>
+        return `<tr${rowClass}>
             ${addrCell}
             <td><span class="rbadge ${badge}">${esc(lbl)}</span></td>
             <td class="rcnt">${r.byteCount}</td>
@@ -466,186 +564,22 @@ function renderRecordView(): void {
     }).join('');
 
     el.innerHTML = `<table class="rtbl"><thead>${header}</thead><tbody>${rows}</tbody></table>`;
-
-    el.querySelectorAll<HTMLElement>('tr[data-goto], td[data-goto]').forEach(cell => {
-        cell.style.cursor = 'pointer';
-        cell.title = 'Jump to address in Memory view';
-        cell.addEventListener('click', () => {
-            const addr = parseInt(cell.dataset.goto!, 16);
-            if (!isNaN(addr)) { switchView('memory'); scrollTo(addr); }
-        });
-    });
-}
-
-// ── Raw view ─────────────────────────────────────────────────────
-
-function renderRawView(): void {
-    const el = document.getElementById('raw-view');
-    if (!el) { return; }
-
-    if (!S.rawSource) {
-        el.innerHTML = `<div class="raw-problems" style="margin:10px"><div class="raw-problems-hdr"><span class="raw-problems-title">Raw View Unavailable</span></div><div style="padding:10px 12px">Raw source is not loaded in the webview. Use Memory view for navigation and editing.</div></div>`;
-        return;
-    }
-
-    const isSrec = S.parseResult?.format === 'srec';
-    const lines = S.rawSource.split(/\r?\n/);
-
-    // Build a map: 1-based line number → parsed record (for error annotations)
-    const recordByLine = new Map<number, { error?: string; checksumValid: boolean }>();
-    if (S.parseResult) {
-        for (const r of S.parseResult.records) { recordByLine.set(r.lineNumber, r); }
-    }
-
-    const rows = lines.map((line, i) => {
-        const lineNum = i + 1;
-        const ln = String(lineNum).padStart(4, '\u00A0');
-        if (!line.trim()) {
-            return `<div class="raw-line"><span class="raw-ln">${ln}</span></div>`;
-        }
-        const rec = recordByLine.get(lineNum);
-        if (isSrec) { return tokenizeSRecLine(ln, line, rec); }
-        return tokenizeIHexLine(ln, line, rec);
-    }).join('');
-
-    // Build the errors panel
-    const errorItems = S.parseResult ? S.parseResult.records
-        .filter(r => r.error || !r.checksumValid)
-        .map(r => {
-            const icon  = r.error ? 'err-icon-fmt' : 'err-icon-chk';
-            const label = r.error ? r.error : `Checksum error: expected 0x${computeExpectedChecksum(r, S.parseResult!.format).toString(16).toUpperCase().padStart(2,'0')}, got 0x${r.checksum.toString(16).toUpperCase().padStart(2,'0')}`;
-            return `<div class="raw-err-item" data-line="${r.lineNumber}">` +
-                `<span class="raw-err-icon ${icon}"></span>` +
-                `<span class="raw-err-line">Line ${r.lineNumber}</span>` +
-                `<span class="raw-err-msg">${esc(label)}</span>` +
-                `</div>`;
-        }) : [];
-
-    const panel = errorItems.length > 0
-        ? `<div class="raw-problems"><div class="raw-problems-hdr">` +
-          `<span class="raw-problems-title">Problems</span>` +
-          `<span class="raw-problems-count">${errorItems.length}</span>` +
-          (S.parseResult!.checksumErrors > 0
-              ? `<button class="raw-repair-btn" id="btn-repair" title="Recompute and write correct checksums for all ${S.parseResult!.checksumErrors} checksum error${S.parseResult!.checksumErrors === 1 ? '' : 's'}">&#10003; Quick Repair</button>`
-              : '') +
-          `</div>${errorItems.join('')}</div>`
-        : '';
-
-    el.innerHTML = `<div class="raw-scroll"><code class="raw-code">${rows}</code></div>${panel}`;
-
-    el.querySelector('#btn-repair')?.addEventListener('click', () => {
-        (el.querySelector('#btn-repair') as HTMLButtonElement).disabled = true;
-        vscode.postMessage({ type: 'repairChecksums' });
-    });
-
-    el.querySelectorAll<HTMLElement>('.raw-err-item[data-line]').forEach(item => {
-        item.addEventListener('click', () => {
-            const lineNum = parseInt(item.dataset.line!, 10);
-            const target = el.querySelector<HTMLElement>(`.raw-line[data-ln="${lineNum}"]`);
-            target?.scrollIntoView({ block: 'center' });
-            target?.classList.add('raw-line-flash');
-            setTimeout(() => target?.classList.remove('raw-line-flash'), 1200);
-        });
-    });
-}
-
-/** Compute what the checksum byte should be for a record (for display in error messages). */
-function computeExpectedChecksum(r: { byteCount: number; address: number; recordType: number; data: number[] }, format: 'ihex' | 'srec'): number {
-    if (format === 'ihex') {
-        let sum = r.byteCount + ((r.address >> 8) & 0xFF) + (r.address & 0xFF) + r.recordType;
-        for (const b of r.data) { sum += b; }
-        return (~sum + 1) & 0xFF;
-    }
-    // SREC: one's-complement; address byte count inferred from record type
-    const aszMap: Record<number, number> = {0:2,1:2,2:3,3:4,5:2,6:3,7:4,8:3,9:2};
-    const asz = aszMap[r.recordType] ?? 2;
-    let sum = r.byteCount;
-    for (let i = asz - 1; i >= 0; i--) { sum += (r.address >>> (i * 8)) & 0xFF; }
-    for (const b of r.data) { sum += b; }
-    return (~sum) & 0xFF;
-}
-
-/** Tokenize a single Intel HEX line. rec is the parsed record for this line (if any). */
-function tokenizeIHexLine(ln: string, line: string, rec: { error?: string; checksumValid: boolean } | undefined): string {
-    const lineNum = ln.trim();
-    if (!line.startsWith(':') || line.length < 11 || rec?.error) {
-        const errTitle = rec?.error ? ` title="${esc(rec.error)}"` : '';
-        return `<div class="raw-line raw-malformed" data-ln="${lineNum}"${errTitle}>` +
-            `<span class="raw-ln">${ln}</span><span class="raw-text">${esc(line)}</span></div>`;
-    }
-    const ll   = esc(line.slice(1, 3));
-    const addr = esc(line.slice(3, 7));
-    const tt   = esc(line.slice(7, 9));
-    const type = parseInt(line.slice(7, 9), 16);
-    const dataEnd = 9 + parseInt(line.slice(1, 3), 16) * 2;
-    const data = esc(line.slice(9, dataEnd));
-    const chk  = esc(line.slice(dataEnd));
-    const typeClass =
-        type === 0 ? 'raw-t-data' :
-        type === 1 ? 'raw-t-eof'  :
-        type === 4 ? 'raw-t-ela'  :
-        type === 2 ? 'raw-t-ela'  : 'raw-t-other';
-    const chkClass = (rec && !rec.checksumValid) ? 'raw-chk raw-chk-err' : 'raw-chk';
-    const chkTitle = (rec && !rec.checksumValid) ? ' title="Checksum error"' : '';
-    return `<div class="raw-line" data-ln="${lineNum}">` +
-        `<span class="raw-ln">${ln}</span>` +
-        `<span class="raw-colon">:</span>` +
-        `<span class="raw-ll">${ll}</span>` +
-        `<span class="raw-addr">${addr}</span>` +
-        `<span class="raw-tt ${typeClass}">${tt}</span>` +
-        `<span class="raw-data">${data}</span>` +
-        `<span class="${chkClass}"${chkTitle}>${chk}</span>` +
-        `</div>`;
-}
-
-/** Tokenize a single SREC line. rec is the parsed record for this line (if any). */
-function tokenizeSRecLine(ln: string, line: string, rec: { error?: string; checksumValid: boolean } | undefined): string {
-    const lineNum = ln.trim();
-    if (!/^S[0-9]/i.test(line) || line.length < 4 || rec?.error) {
-        const errTitle = rec?.error ? ` title="${esc(rec.error)}"` : '';
-        return `<div class="raw-line raw-malformed" data-ln="${lineNum}"${errTitle}>` +
-            `<span class="raw-ln">${ln}</span><span class="raw-text">${esc(line)}</span></div>`;
-    }
-    const typeChar = line[1];
-    const type = parseInt(typeChar, 10);
-    const aszMap: Record<number, number> = {0:2,1:2,2:3,3:4,5:2,6:3,7:4,8:3,9:2};
-    const aszChars = (aszMap[type] ?? 2) * 2;
-    const bcHex   = esc(line.slice(2, 4));
-    const addrHex = esc(line.slice(4, 4 + aszChars));
-    const byteCount = parseInt(line.slice(2, 4), 16);
-    const dataEnd = 4 + aszChars + (byteCount - (aszChars / 2) - 1) * 2;
-    const dataHex = esc(line.slice(4 + aszChars, dataEnd));
-    const chkHex  = esc(line.slice(dataEnd));
-    const typeClass =
-        (type === 1 || type === 2 || type === 3) ? 'raw-t-data'  :
-        (type === 7 || type === 8 || type === 9) ? 'raw-t-eof'   :
-        type === 0                               ? 'raw-t-ela'   : 'raw-t-other';
-    const chkClass = (rec && !rec.checksumValid) ? 'raw-chk raw-chk-err' : 'raw-chk';
-    const chkTitle = (rec && !rec.checksumValid) ? ' title="Checksum error"' : '';
-    return `<div class="raw-line" data-ln="${lineNum}">` +
-        `<span class="raw-ln">${ln}</span>` +
-        `<span class="raw-colon">S</span>` +
-        `<span class="raw-tt ${typeClass}">${esc(typeChar)}</span>` +
-        `<span class="raw-ll">${bcHex}</span>` +
-        `<span class="raw-addr">${addrHex}</span>` +
-        `<span class="raw-data">${dataHex}</span>` +
-        `<span class="${chkClass}"${chkTitle}>${chkHex}</span>` +
-        `</div>`;
 }
 
 // ── View switching ────────────────────────────────────────────────
 
-function switchView(v: 'memory' | 'record' | 'raw'): void {
+function switchView(v: 'memory' | 'record'): void {
     S.currentView = v;
     document.getElementById('record-view') ?.classList.toggle('visible', v === 'record');
     document.getElementById('memory-view') ?.classList.toggle('visible', v === 'memory');
-    document.getElementById('raw-view')    ?.classList.toggle('visible', v === 'raw');
     document.getElementById('btn-mem')     ?.classList.toggle('active',  v === 'memory');
     document.getElementById('btn-rec')     ?.classList.toggle('active',  v === 'record');
-    document.getElementById('btn-raw')     ?.classList.toggle('active',  v === 'raw');
+    document.getElementById('btn-edit-mode')!.style.display = v === 'memory' ? '' : 'none';
+    document.getElementById('edit-mode-group')!.style.display = v === 'memory' && S.editMode ? '' : 'none';
+    document.getElementById('sidebar')!.style.display = v === 'memory' ? '' : 'none';
+    document.getElementById('side-tabs')!.style.display = v === 'memory' ? '' : 'none';
     if (v === 'memory')      { memRerender(); }
     else if (v === 'record') { renderRecordView(); }
-    else                     { renderRawView(); }
 }
 
 // ── External file-change helpers ──────────────────────────────────
@@ -655,17 +589,23 @@ type IncomingFile = {
     labels: typeof S.labels;
 };
 
+/** Remove all external change banners to ensure only latest state is shown. */
+function removeAllExternalChangeBanners(): void {
+    document.getElementById('ext-conflict-banner')?.remove();
+    document.getElementById('ext-reload-banner')?.remove();
+    document.getElementById('ext-error-banner')?.remove();
+}
+
 /** Apply an external file change directly (no unsaved edits to worry about). */
 function applyExternalChange(incoming: IncomingFile): void {
     S.parseResult = incoming.parseResult;
     S.labels      = incoming.labels;
-    S.rawSource   = '';
     initFlatBytes();
     buildMemRows();
     S.currentView = 'memory';
     render();
     // Tell the provider it can update its own in-memory raw/parseResult
-    vscode.postMessage({ type: 'reloadAccepted', rawSource: '' });
+    vscode.postMessage({ type: 'reloadAccepted' });
 }
 
 /** Show a non-destructive conflict banner when external change arrives during edit mode. */
@@ -678,9 +618,8 @@ function showExternalChangeConflict(incoming: IncomingFile): void {
     banner.className = 'ext-conflict-banner';
     banner.innerHTML =
         `<span class="ecb-icon">⚠</span>` +
-        `<span class="ecb-msg">File changed externally. You have <strong>${S.edits.size}</strong> unsaved edit${S.edits.size === 1 ? '' : 's'}.</span>` +
-        `<button class="ecb-btn ecb-reload"  id="ecb-reload">Reload &amp; discard my edits</button>` +
-        `<button class="ecb-btn ecb-keep"    id="ecb-keep">Keep my edits</button>`;
+        `<span class="ecb-msg">File changed externally. You have <strong>${S.edits.size}</strong> unsaved edit${S.edits.size === 1 ? '' : 's'}. Changes must be reloaded.</span>` +
+        `<button class="ecb-btn ecb-reload"  id="ecb-reload">Reload &amp; discard my edits</button>`;
 
     document.getElementById('app')!.prepend(banner);
 
@@ -690,14 +629,157 @@ function showExternalChangeConflict(incoming: IncomingFile): void {
         S.edits.clear();
         S.undoStack.length = 0;
         S.editMode = false;
-        applyExternalChange(incoming);
+        applyExternalChangeAndUnlock(incoming);
     });
+}
 
-    document.getElementById('ecb-keep')!.addEventListener('click', () => {
+/** Show a reload banner when external change arrives and there are no unsaved edits. */
+function showExternalChangeReloadBanner(incoming: IncomingFile): void {
+    // Remove any previous banner
+    document.getElementById('ext-reload-banner')?.remove();
+
+    const banner = document.createElement('div');
+    banner.id = 'ext-reload-banner';
+    banner.className = 'ext-reload-banner';
+    banner.innerHTML =
+        `<span class="erb-icon">🔄</span>` +
+        `<span class="erb-msg">File changed externally. Reloading...</span>` +
+        `<button class="erb-btn erb-reload"  id="erb-reload">Reload</button>`;
+
+    document.getElementById('app')!.prepend(banner);
+
+    document.getElementById('erb-reload')!.addEventListener('click', () => {
         banner.remove();
-        // Dismiss — keep current state, tell provider to sync its own copy
-        vscode.postMessage({ type: 'reloadAccepted', rawSource: '' });
+        applyExternalChangeAndUnlock(incoming);
     });
+}
+
+/** Update UI lock state when external change occurs or is resolved. */
+function updateLockState(): void {
+    const app = document.getElementById('app');
+    if (!app) { return; }
+    
+    if (S.lockedDueToExternalChange) {
+        app.classList.add('locked-due-to-external-change');
+        disableAllInteractiveElements();
+    } else {
+        app.classList.remove('locked-due-to-external-change');
+        enableAllInteractiveElements();
+    }
+}
+
+/** Disable all buttons, inputs, and clickable elements when locked. */
+function disableAllInteractiveElements(): void {
+    const mainArea = document.getElementById('main-area');
+    const toolbar = document.getElementById('toolbar');
+    
+    if (mainArea) {
+        const elements = mainArea.querySelectorAll('button, input, [role="button"]');
+        elements.forEach(el => {
+            const elem = el as HTMLElement;
+            elem.setAttribute('data-was-enabled', 'true');
+            if (elem instanceof HTMLButtonElement || elem instanceof HTMLInputElement) {
+                elem.disabled = true;
+            }
+        });
+    }
+    
+    if (toolbar) {
+        const elements = toolbar.querySelectorAll('button, input, [role="button"]');
+        elements.forEach(el => {
+            const elem = el as HTMLElement;
+            elem.setAttribute('data-was-enabled', 'true');
+            if (elem instanceof HTMLButtonElement || elem instanceof HTMLInputElement) {
+                elem.disabled = true;
+            }
+        });
+    }
+}
+
+/** Re-enable all interactive elements that were disabled by lock. */
+function enableAllInteractiveElements(): void {
+    const mainArea = document.getElementById('main-area');
+    const toolbar = document.getElementById('toolbar');
+    
+    if (mainArea) {
+        const elements = mainArea.querySelectorAll('[data-was-enabled="true"]');
+        elements.forEach(el => {
+            const elem = el as HTMLElement;
+            elem.removeAttribute('data-was-enabled');
+            if (elem instanceof HTMLButtonElement || elem instanceof HTMLInputElement) {
+                elem.disabled = false;
+            }
+        });
+    }
+    
+    if (toolbar) {
+        const elements = toolbar.querySelectorAll('[data-was-enabled="true"]');
+        elements.forEach(el => {
+            const elem = el as HTMLElement;
+            elem.removeAttribute('data-was-enabled');
+            if (elem instanceof HTMLButtonElement || elem instanceof HTMLInputElement) {
+                elem.disabled = false;
+            }
+        });
+    }
+}
+
+/** Show an error banner when external change results in an invalid file. */
+function showExternalChangeError(checksumErrors: number, malformedLines: number, errorCount: number, canQuickRepair: boolean): void {
+    // Remove any previous banner
+    document.getElementById('ext-error-banner')?.remove();
+
+    const banner = document.createElement('div');
+    banner.id = 'ext-error-banner';
+    banner.className = 'ext-error-banner';
+    
+    let errorMsg = '';
+    if (checksumErrors > 0 && malformedLines > 0) {
+        errorMsg = `${checksumErrors} checksum error${checksumErrors === 1 ? '' : 's'} and ${malformedLines} malformed line${malformedLines === 1 ? '' : 's'}`;
+    } else if (checksumErrors > 0) {
+        errorMsg = `${checksumErrors} checksum error${checksumErrors === 1 ? '' : 's'}`;
+    } else {
+        errorMsg = `${malformedLines} malformed line${malformedLines === 1 ? '' : 's'}`;
+    }
+    
+    let buttonHtml = '';
+    if (canQuickRepair) {
+        // Only checksum errors — offer quick repair option only
+        buttonHtml =
+            `<button class="eeb-btn eeb-repair"  id="eeb-repair">Quick Repair &amp; reload</button>`;
+    } else {
+        // Malformed lines present — can't auto-repair, just offer to switch to text editor
+        buttonHtml =
+            `<button class="eeb-btn eeb-view-text" id="eeb-view-text">View in text editor</button>`;
+    }
+    
+    banner.innerHTML =
+        `<span class="eeb-icon">❌</span>` +
+        `<span class="eeb-msg">File changed externally and is now invalid: <strong>${errorMsg}</strong></span>` +
+        buttonHtml;
+
+    document.getElementById('app')!.prepend(banner);
+
+    const repairBtn = document.getElementById('eeb-repair');
+    if (repairBtn) {
+        repairBtn.addEventListener('click', () => {
+            vscode.postMessage({ type: 'repairAndReload' });
+        });
+    }
+
+    const closeBtn = document.getElementById('eeb-close');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            vscode.postMessage({ type: 'closePanel' });
+        });
+    }
+
+    const viewTextBtn = document.getElementById('eeb-view-text');
+    if (viewTextBtn) {
+        viewTextBtn.addEventListener('click', () => {
+            vscode.postMessage({ type: 'viewInNormalEditor' });
+        });
+    }
 }
 
 function getOriginalByte(addr: number): number | undefined {

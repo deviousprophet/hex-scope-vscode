@@ -14,7 +14,7 @@ function resetState(): void {
     S.selEnd       = null;
     S.matchAddrs   = [];
     S.matchIdx     = -1;
-    S.currentView  = 'raw';
+    S.currentView  = 'memory';
     S.editMode     = false;
     S.edits.clear();
     S.undoStack.length = 0;
@@ -25,7 +25,7 @@ function resetState(): void {
     S.sidebarTab       = 'inspector';
 }
 
-// ── HTML escaping \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ── HTML escaping ───────────────────────────────────────────────
 
 suite('esc()', () => {
     test('plain text is returned unchanged', () => {
@@ -48,7 +48,7 @@ suite('esc()', () => {
     });
 });
 
-// ── Byte size formatting \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ── Byte size formatting ────────────────────────────────────────
 
 suite('fmtB()', () => {
     test('0 bytes', () => { assert.strictEqual(fmtB(0), '0 B'); });
@@ -60,36 +60,36 @@ suite('fmtB()', () => {
     test('2.5 MB', () => { assert.strictEqual(fmtB(1024 * 1024 * 2.5), '2.5 MB'); });
 });
 
-// ── Byte CSS class \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ── Byte CSS class ──────────────────────────────────────────────
 
 suite('byteClass()', () => {
-    test('0x00 \u2192 "bz" (zero)', () => {
+    test('0x00 → "bz" (zero)', () => {
         assert.strictEqual(byteClass(0x00), 'bz');
     });
-    test('0x20 (space) \u2192 "bp" (printable)', () => {
+    test('0x20 (space) → "bp" (printable)', () => {
         assert.strictEqual(byteClass(0x20), 'bp');
     });
-    test('0x41 ("A") \u2192 "bp"', () => {
+    test('0x41 ("A") → "bp"', () => {
         assert.strictEqual(byteClass(0x41), 'bp');
     });
-    test('0x7E ("~") \u2192 "bp"', () => {
+    test('0x7E ("~") → "bp"', () => {
         assert.strictEqual(byteClass(0x7E), 'bp');
     });
-    test('0x7F (DEL) \u2192 "bn" (non-printable)', () => {
+    test('0x7F (DEL) → "bn" (non-printable)', () => {
         assert.strictEqual(byteClass(0x7F), 'bn');
     });
-    test('0x01 (control) \u2192 "bn"', () => {
+    test('0x01 (control) → "bn"', () => {
         assert.strictEqual(byteClass(0x01), 'bn');
     });
-    test('0x80 \u2192 "bh" (high byte)', () => {
+    test('0x80 → "bh" (high byte)', () => {
         assert.strictEqual(byteClass(0x80), 'bh');
     });
-    test('0xFF \u2192 "bh"', () => {
+    test('0xFF → "bh"', () => {
         assert.strictEqual(byteClass(0xFF), 'bh');
     });
 });
 
-// ── State initial values \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ── State initial values ────────────────────────────────────────
 
 suite('state constants and defaults', () => {
     test('BPR is 16', () => {
@@ -106,7 +106,7 @@ suite('state constants and defaults', () => {
     });
 });
 
-// ── initFlatBytes() \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ── initFlatBytes() ─────────────────────────────────────────────
 
 suite('initFlatBytes()', () => {
     setup(resetState);
@@ -162,7 +162,7 @@ suite('initFlatBytes()', () => {
     });
 });
 
-// ── buildMemRows() \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ── buildMemRows() ──────────────────────────────────────────────
 
 suite('buildMemRows()', () => {
     setup(resetState);
@@ -244,9 +244,8 @@ suite('buildMemRows()', () => {
         const dataRows = S.memRows.filter(r => r.type === 'data');
         assert.ok(dataRows.length >= 2);
         for (let i = 1; i < dataRows.length; i++) {
-            assert.ok(dataRows[i].type === 'data' && dataRows[i-1].type === 'data');
-            assert.ok(dataRows[i].address > dataRows[i-1].address);
+            assert.ok(dataRows[i].type === 'data' && dataRows[i - 1].type === 'data');
+            assert.ok(dataRows[i].address > dataRows[i - 1].address);
         }
     });
 });
-

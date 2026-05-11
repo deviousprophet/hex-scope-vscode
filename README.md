@@ -1,6 +1,6 @@
 # HexScope
 
-A lightweight VS Code custom editor for viewing, searching, and patching firmware image files (Intel HEX and Motorola SREC), with a live **Struct Overlay** for decoding binary data directly in the memory view.
+VS Code extension for viewing and analyzing firmware files (HEX, SREC) with hex grid, search, patching.
 
 ## Supported file types
 
@@ -14,8 +14,11 @@ A lightweight VS Code custom editor for viewing, searching, and patching firmwar
 | Action | How |
 |---|---|
 | Open | Right-click a supported file → **Open with HexScope Viewer** |
-| Views | Toolbar: **Memory**, **Records**, **Raw** |
+| Views | Toolbar: **Memory** (edit, search, labels, structs), **Records** (read-only record table) |
 | Edit | Click **Edit** to patch bytes; **Save** writes changes and recomputes checksums |
+| Repair | When errors are detected (checksum or malformed), click **Quick Repair & reload** (checksums only) or **View in text editor** (manual fix) |
+| Repair (Text Editor) | Open file in text editor, then run **HexScope: Quick Repair Checksums** from command palette |
+| External Changes | When file changes externally, a banner appears; unsaved edits are automatically discarded |
 | Search | `Ctrl+F` — search by hex sequence, ASCII string, or address |
 | Labels | Add named, color-coded address-range banners; click a label to jump to it |
 | Struct Overlay | Define C structs, pin them at addresses, and decode live binary data |

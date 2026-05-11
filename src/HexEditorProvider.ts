@@ -43,13 +43,22 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
         webviewPanel: vscode.WebviewPanel,
         _token: vscode.CancellationToken
     ): Promise<void> {
-        webviewPanel.webview.options = { enableScripts: true };
-        webviewPanel.webview.html = this._getHtml(webviewPanel.webview, document.uri);
-
         let raw = '';
         let format: 'ihex' | 'srec' = 'ihex';
         let parseResult: ParseResult | null = null;
         let webviewReady = false;
+
+        raw = new TextDecoder('utf-8').decode(await vscode.workspace.fs.readFile(document.uri));
+        format = detectFormat(document.uri, raw);
+        parseResult = format === 'srec' ? parseSRec(raw) : parseIntelHex(raw);
+        if (parseResult.checksumErrors > 0 || parseResult.malformedLines > 0) {
+            await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(document.uri), { preview: false });
+            webviewPanel.dispose();
+            return;
+        }
+
+        webviewPanel.webview.options = { enableScripts: true };
+        webviewPanel.webview.html = this._getHtml(webviewPanel.webview, document.uri);
 
         const labelKey = `hexScope.labels.${document.uri.toString()}`;
 
@@ -85,6 +94,27 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     const newRaw = new TextDecoder('utf-8').decode(
                         await vscode.workspace.fs.readFile(document.uri));
                     const newResult = format === 'srec' ? parseSRec(newRaw) : parseIntelHex(newRaw);
+                    
+                    // Validate the externally-changed file
+                    if (newResult.checksumErrors > 0 || newResult.malformedLines > 0) {
+                        // Update provider-side state with the new content so repair works on actual file
+                        raw = newRaw;
+                        parseResult = newResult;
+                        
+                        // Quick repair only works with checksum errors; malformed lines need manual fixing
+                        const canQuickRepair = newResult.malformedLines === 0;
+                        webviewPanel.webview.postMessage({
+                            type: 'externalChangeError',
+                            parseResult: serializeParseResult(newResult, format),
+                            labels: this._context.workspaceState.get(labelKey, []),
+                            checksumErrors: newResult.checksumErrors,
+                            malformedLines: newResult.malformedLines,
+                            errorCount: newResult.checksumErrors + newResult.malformedLines,
+                            canQuickRepair,
+                        });
+                        return;
+                    }
+                    
                     // Send as 'externalChange' so the webview can guard against
                     // overwriting unsaved edits
                     webviewPanel.webview.postMessage({
@@ -156,45 +186,45 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     await vscode.workspace.fs.writeFile(document.uri, new TextEncoder().encode(newHex));
                     raw = newHex;
                     parseResult = format === 'srec' ? parseSRec(raw) : parseIntelHex(raw);
-                    webviewPanel.webview.postMessage({ type: 'savedEdits' });
+                    webviewPanel.webview.postMessage({
+                        type: 'savedEdits',
+                        parseResult: serializeParseResult(parseResult, format),
+                    });
                     vscode.window.showInformationMessage(`HexScope: saved ${edits.length} byte${edits.length === 1 ? '' : 's'} to ${document.uri.fsPath.split(/[\/\\]/).pop()}`);
                     break;
                 }
-                case 'repairChecksums': {
+                case 'reloadAccepted': {
+                    break;
+                }
+                case 'repairAndReload': {
+                    // File had checksum errors — repair them and reload HexScope
                     if (!parseResult) { break; }
                     const repairedRaw = repairChecksums(raw, parseResult);
                     suppressReload = true;
                     await vscode.workspace.fs.writeFile(document.uri, new TextEncoder().encode(repairedRaw));
-                    const fixedCount = parseResult.checksumErrors;
                     raw = repairedRaw;
                     parseResult = format === 'srec' ? parseSRec(raw) : parseIntelHex(raw);
-                    postInit();
-                    vscode.window.showInformationMessage(`HexScope: repaired ${fixedCount} checksum${fixedCount === 1 ? '' : 's'} in ${document.uri.fsPath.split(/[\/\\]/).pop()}`);
+                    // Send the repaired content to the webview
+                    webviewPanel.webview.postMessage({
+                        type: 'repairComplete',
+                        parseResult: serializeParseResult(parseResult, format),
+                    });
+                    vscode.window.showInformationMessage(`HexScope: repaired checksums and reloaded ${document.uri.fsPath.split(/[\/\\]/).pop()}`);
                     break;
                 }
-                case 'reloadAccepted': {
-                    // Webview confirmed it is safe to apply the pending external change
-                    const acceptedRaw = msg.rawSource as string | undefined;
-                    if (typeof acceptedRaw === 'string' && acceptedRaw.length > 0) {
-                        raw = acceptedRaw;
-                        parseResult = format === 'srec' ? parseSRec(raw) : parseIntelHex(raw);
-                    }
+                case 'closePanel': {
+                    // File became invalid externally — user chose to close HexScope
+                    webviewPanel.dispose();
+                    break;
+                }
+                case 'viewInNormalEditor': {
+                    // File has malformed lines — open in text editor but keep HexScope view open
+                    const doc = await vscode.workspace.openTextDocument(document.uri);
+                    await vscode.window.showTextDocument(doc, { preview: false });
                     break;
                 }
             }
         });
-
-        void (async () => {
-            try {
-                raw = new TextDecoder('utf-8').decode(await vscode.workspace.fs.readFile(document.uri));
-                format = detectFormat(document.uri, raw);
-                parseResult = format === 'srec' ? parseSRec(raw) : parseIntelHex(raw);
-                postInit();
-            } catch (error) {
-                const message = error instanceof Error ? error.message : 'Unknown error';
-                webviewPanel.webview.postMessage({ type: 'loadError', message });
-            }
-        })();
 
         webviewPanel.onDidChangeViewState(e => {
             if (e.webviewPanel.active) {
@@ -218,7 +248,7 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
         const cssFiles = [
             'base', 'toolbar', 'layout', 'sidebar',
-            'record-view', 'memory-view', 'raw-view', 'context-menu', 'struct',
+            'record-view', 'memory-view', 'context-menu', 'struct',
         ];
         const cssLinks = cssFiles.map(name => {
             const uri = webview.asWebviewUri(
@@ -266,7 +296,18 @@ export interface SegmentLabel {
 
 function serializeParseResult(result: ParseResult, format: 'ihex' | 'srec'): SerializedParseResult {
     return {
-        records: [],
+        records: result.records.map(r => ({
+            lineNumber: r.lineNumber,
+            raw: r.raw,
+            byteCount: r.byteCount,
+            address: r.address,
+            recordType: r.recordType,
+            data: Array.from(r.data),
+            checksum: r.checksum,
+            checksumValid: r.checksumValid,
+            resolvedAddress: r.resolvedAddress,
+            error: r.error,
+        })),
         recordCount: result.records.length,
         segments: result.segments.map(s => ({
             startAddress: s.startAddress,
