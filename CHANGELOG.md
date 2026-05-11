@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.3.0] — 2026-05-11
+
+### Added
+
+- **Record View** — restored read-only table view of hex/SREC records (was accidentally removed in 2.2.0)
+- **External file change detection** — monitors when the file is modified externally (by another tool or editor) and handles it gracefully
+  - Shows reload banner for valid external changes with a single action button
+  - Shows error banner for invalid external changes (checksum errors or malformed lines) with repair or manual-edit options
+  - Automatically discards unsaved edits when external changes are invalid (cannot sensibly merge)
+- **Quick Repair & reload** — when a file has checksum errors, a repair button appears in the error banner; clicking it fixes all checksum bytes and reloads the file automatically
+- **View in text editor** — error banner includes a button to open the file in the text editor without closing HexScope (useful for fixing malformed lines manually)
+- **UI locking** — when external file changes require resolution, the interface is locked with visual feedback (reduced opacity) until the user resolves the conflict
+
+### Changed
+
+- Sidebar (Inspector, Struct Overlay) and Edit controls now hide in Record View (read-only, non-interactive)
+- Record View rows are non-interactive (no click-to-jump to Memory view)
+
+### Fixed
+
+- Quick repair now operates on the actual externally-changed file content (not stale cached state)
+- Edit mode properly clears after repair completion
+- External changes display correct data even when file has checksum/malformed errors
+
 ## [2.2.0] — 2026-05-09
 
 ### Added
@@ -19,6 +43,7 @@
 
 - Fixed jump-to-address behavior for search results, labels, and struct pins in virtualized Memory view
 - Fixed false-positive hex/ASCII matches across non-contiguous memory gaps
+- **Regression:** Record View accidentally removed from viewer (restored in 2.3.0)
 
 ## [2.1.1] — 2026-05-01
 
