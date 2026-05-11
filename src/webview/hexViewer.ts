@@ -83,15 +83,35 @@ window.addEventListener('message', (e: MessageEvent) => {
         }
         case 'externalChangeError': {
             // File changed externally and became invalid (checksum/malformed errors)
-            // Lock the view and show error banner with action buttons.
+            // Update state with the new (invalid) data and show error banner
             const checksumErrors = msg.checksumErrors as number;
             const malformedLines = msg.malformedLines as number;
             const errorCount = msg.errorCount as number;
             const canQuickRepair = msg.canQuickRepair as boolean;
+            
+            // Update with the new external data (even though it has errors)
+            S.parseResult = msg.parseResult as typeof S.parseResult;
+            S.labels      = (msg.labels as typeof S.labels) ?? [];
+            initFlatBytes();
+            buildMemRows();
+            
             S.lockedDueToExternalChange = true;
             removeAllExternalChangeBanners();
             updateLockState();
+            
+            // Discard any unsaved edits (can't merge with invalid content)
+            if (S.editMode && S.edits.size > 0) {
+                S.edits.clear();
+                S.undoStack.length = 0;
+                S.editMode = false;
+            }
+            
+            // Show error banner with action buttons
             showExternalChangeError(checksumErrors, malformedLines, errorCount, canQuickRepair);
+            
+            // Rerender current view to show the new (invalid) data
+            if (S.currentView === 'memory') { memRerender(); }
+            else if (S.currentView === 'record') { renderRecordView(); }
             break;
         }
         case 'repairComplete': {
@@ -99,16 +119,55 @@ window.addEventListener('message', (e: MessageEvent) => {
             S.parseResult = msg.parseResult as typeof S.parseResult;
             initFlatBytes();
             buildMemRows();
+            // Clear edit mode and edits
+            S.edits.clear();
+            S.undoStack.length = 0;
+            S.editMode = false;
             // Remove the error banner and unlock
             document.getElementById('ext-error-banner')?.remove();
             S.lockedDueToExternalChange = false;
             updateLockState();
+            updateEditControls();
+            updateDirtyBar();
+            renderStats();
             if (S.currentView === 'memory') { rerender.memory(); }
             else if (S.currentView === 'record') { renderRecordView(); }
             break;
         }
     }
 });
+
+// ── Helper: apply external change and unlock ──────────────────────
+
+function applyExternalChangeAndUnlock(incoming: IncomingFile): void {
+    S.parseResult = incoming.parseResult;
+    S.labels      = incoming.labels;
+    initFlatBytes();
+    buildMemRows();
+    S.currentView = 'memory';
+    S.lockedDueToExternalChange = false;
+    updateLockState();
+    render();
+    vscode.postMessage({ type: 'reloadAccepted' });
+}
+
+// ── Helper: update edit controls visibility ──────────────────────
+
+function updateEditControls(): void {
+    const inMemory = S.currentView === 'memory';
+    document.getElementById('btn-edit-mode')!.style.display = inMemory ? '' : 'none';
+    document.getElementById('edit-mode-group')!.style.display = inMemory && S.editMode ? '' : 'none';
+}
+
+// ── Lock click interception ──────────────────────────────────────
+
+function preventClickWhenLocked(e: Event): void {
+    if (S.lockedDueToExternalChange) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+    }
+}
 
 // ── Main render ───────────────────────────────────────────────────
 
@@ -181,13 +240,17 @@ function render(): void {
     // Toolbar buttons
     document.getElementById('btn-mem')!.addEventListener('click', () => switchView('memory'));
     document.getElementById('btn-rec')!.addEventListener('click', () => switchView('record'));
-
-    const updateEditControls = (): void => {
-        const inMemory = S.currentView === 'memory';
-        document.getElementById('btn-edit-mode')!.style.display = inMemory ? '' : 'none';
-        document.getElementById('edit-mode-group')!.style.display = inMemory && S.editMode ? '' : 'none';
-    };
     updateEditControls();
+
+    // Setup persistent lock interception listeners (check flag on each click)
+    const mainArea = document.getElementById('main-area');
+    const toolbar = document.getElementById('toolbar');
+    if (mainArea) {
+        mainArea.addEventListener('click', preventClickWhenLocked, { capture: true });
+    }
+    if (toolbar) {
+        toolbar.addEventListener('click', preventClickWhenLocked, { capture: true });
+    }
 
     // Edit mode toggle
     document.getElementById('btn-edit-mode')!.addEventListener('click', () => {
@@ -566,15 +629,7 @@ function showExternalChangeConflict(incoming: IncomingFile): void {
         S.edits.clear();
         S.undoStack.length = 0;
         S.editMode = false;
-        S.parseResult = incoming.parseResult;
-        S.labels      = incoming.labels;
-        initFlatBytes();
-        buildMemRows();
-        S.currentView = 'memory';
-        S.lockedDueToExternalChange = false;
-        updateLockState();
-        render();
-        vscode.postMessage({ type: 'reloadAccepted' });
+        applyExternalChangeAndUnlock(incoming);
     });
 }
 
@@ -595,15 +650,7 @@ function showExternalChangeReloadBanner(incoming: IncomingFile): void {
 
     document.getElementById('erb-reload')!.addEventListener('click', () => {
         banner.remove();
-        S.parseResult = incoming.parseResult;
-        S.labels      = incoming.labels;
-        initFlatBytes();
-        buildMemRows();
-        S.currentView = 'memory';
-        S.lockedDueToExternalChange = false;
-        updateLockState();
-        render();
-        vscode.postMessage({ type: 'reloadAccepted' });
+        applyExternalChangeAndUnlock(incoming);
     });
 }
 
@@ -614,51 +661,10 @@ function updateLockState(): void {
     
     if (S.lockedDueToExternalChange) {
         app.classList.add('locked-due-to-external-change');
-        // Disable all interactive elements except banner buttons
         disableAllInteractiveElements();
-        // Add click interception
-        addLockClickInterception();
     } else {
         app.classList.remove('locked-due-to-external-change');
-        // Re-enable all interactive elements
         enableAllInteractiveElements();
-        // Remove click interception
-        removeLockClickInterception();
-    }
-}
-
-/** Prevent all clicks in main area when locked (except on banners). */
-function addLockClickInterception(): void {
-    const mainArea = document.getElementById('main-area');
-    const toolbar = document.getElementById('toolbar');
-    
-    if (mainArea) {
-        mainArea.addEventListener('click', preventClickWhenLocked, { capture: true });
-    }
-    if (toolbar) {
-        toolbar.addEventListener('click', preventClickWhenLocked, { capture: true });
-    }
-}
-
-/** Remove click interception when unlocked. */
-function removeLockClickInterception(): void {
-    const mainArea = document.getElementById('main-area');
-    const toolbar = document.getElementById('toolbar');
-    
-    if (mainArea) {
-        mainArea.removeEventListener('click', preventClickWhenLocked, { capture: true });
-    }
-    if (toolbar) {
-        toolbar.removeEventListener('click', preventClickWhenLocked, { capture: true });
-    }
-}
-
-/** Prevent click event if locked. */
-function preventClickWhenLocked(e: Event): void {
-    if (S.lockedDueToExternalChange) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        e.stopPropagation();
     }
 }
 

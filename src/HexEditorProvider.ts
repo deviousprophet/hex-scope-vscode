@@ -105,6 +105,8 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
                         const canQuickRepair = newResult.malformedLines === 0;
                         webviewPanel.webview.postMessage({
                             type: 'externalChangeError',
+                            parseResult: serializeParseResult(newResult, format),
+                            labels: this._context.workspaceState.get(labelKey, []),
                             checksumErrors: newResult.checksumErrors,
                             malformedLines: newResult.malformedLines,
                             errorCount: newResult.checksumErrors + newResult.malformedLines,
