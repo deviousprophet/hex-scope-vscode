@@ -94,6 +94,25 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     const newRaw = new TextDecoder('utf-8').decode(
                         await vscode.workspace.fs.readFile(document.uri));
                     const newResult = format === 'srec' ? parseSRec(newRaw) : parseIntelHex(newRaw);
+                    
+                    // Validate the externally-changed file
+                    if (newResult.checksumErrors > 0 || newResult.malformedLines > 0) {
+                        // Update provider-side state with the new content so repair works on actual file
+                        raw = newRaw;
+                        parseResult = newResult;
+                        
+                        // Quick repair only works with checksum errors; malformed lines need manual fixing
+                        const canQuickRepair = newResult.malformedLines === 0;
+                        webviewPanel.webview.postMessage({
+                            type: 'externalChangeError',
+                            checksumErrors: newResult.checksumErrors,
+                            malformedLines: newResult.malformedLines,
+                            errorCount: newResult.checksumErrors + newResult.malformedLines,
+                            canQuickRepair,
+                        });
+                        return;
+                    }
+                    
                     // Send as 'externalChange' so the webview can guard against
                     // overwriting unsaved edits
                     webviewPanel.webview.postMessage({
@@ -173,6 +192,33 @@ export class HexEditorProvider implements vscode.CustomReadonlyEditorProvider {
                     break;
                 }
                 case 'reloadAccepted': {
+                    break;
+                }
+                case 'repairAndReload': {
+                    // File had checksum errors — repair them and reload HexScope
+                    if (!parseResult) { break; }
+                    const repairedRaw = repairChecksums(raw, parseResult);
+                    suppressReload = true;
+                    await vscode.workspace.fs.writeFile(document.uri, new TextEncoder().encode(repairedRaw));
+                    raw = repairedRaw;
+                    parseResult = format === 'srec' ? parseSRec(raw) : parseIntelHex(raw);
+                    // Send the repaired content to the webview
+                    webviewPanel.webview.postMessage({
+                        type: 'repairComplete',
+                        parseResult: serializeParseResult(parseResult, format),
+                    });
+                    vscode.window.showInformationMessage(`HexScope: repaired checksums and reloaded ${document.uri.fsPath.split(/[\/\\]/).pop()}`);
+                    break;
+                }
+                case 'closePanel': {
+                    // File became invalid externally — user chose to close HexScope
+                    webviewPanel.dispose();
+                    break;
+                }
+                case 'viewInNormalEditor': {
+                    // File has malformed lines — open in text editor but keep HexScope view open
+                    const doc = await vscode.workspace.openTextDocument(document.uri);
+                    await vscode.window.showTextDocument(doc, { preview: false });
                     break;
                 }
             }

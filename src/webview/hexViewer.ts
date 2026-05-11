@@ -66,16 +66,45 @@ window.addEventListener('message', (e: MessageEvent) => {
             break;
         case 'externalChange': {
             // File changed externally while the webview is open.
-            // If the user has unsaved edits, ask them what to do instead of silently reloading.
+            // Lock the view and show conflict decision banner.
             const incoming = {
                 parseResult: msg.parseResult as typeof S.parseResult,
                 labels:      (msg.labels as typeof S.labels) ?? [],
             };
+            S.lockedDueToExternalChange = true;
+            removeAllExternalChangeBanners();
+            updateLockState();
             if (S.editMode && S.edits.size > 0) {
                 showExternalChangeConflict(incoming);
             } else {
-                applyExternalChange(incoming);
+                showExternalChangeReloadBanner(incoming);
             }
+            break;
+        }
+        case 'externalChangeError': {
+            // File changed externally and became invalid (checksum/malformed errors)
+            // Lock the view and show error banner with action buttons.
+            const checksumErrors = msg.checksumErrors as number;
+            const malformedLines = msg.malformedLines as number;
+            const errorCount = msg.errorCount as number;
+            const canQuickRepair = msg.canQuickRepair as boolean;
+            S.lockedDueToExternalChange = true;
+            removeAllExternalChangeBanners();
+            updateLockState();
+            showExternalChangeError(checksumErrors, malformedLines, errorCount, canQuickRepair);
+            break;
+        }
+        case 'repairComplete': {
+            // Checksums were repaired and file reloaded successfully
+            S.parseResult = msg.parseResult as typeof S.parseResult;
+            initFlatBytes();
+            buildMemRows();
+            // Remove the error banner and unlock
+            document.getElementById('ext-error-banner')?.remove();
+            S.lockedDueToExternalChange = false;
+            updateLockState();
+            if (S.currentView === 'memory') { rerender.memory(); }
+            else if (S.currentView === 'record') { renderRecordView(); }
             break;
         }
     }
@@ -458,12 +487,11 @@ function renderRecordView(): void {
                 ? `<span class="cok">${r.checksum.toString(16).toUpperCase().padStart(2, '0')}</span>`
                 : `<span class="cerr">${r.checksum.toString(16).toUpperCase().padStart(2, '0')}</span><span class="cerr-tag">checksum error</span>`;
         const rowClass = (r.error || !r.checksumValid) ? ' class="rerr"' : '';
-        const gotoAttr = isData ? ` data-goto="${ra}"` : '';
         const addrCell = isData
-            ? `<td class="raddr"${gotoAttr}>${ra}</td>`
+            ? `<td class="raddr">${ra}</td>`
             : `<td class="raddr raddr-empty">—</td>`;
 
-        return `<tr${gotoAttr}${rowClass}>
+        return `<tr${rowClass}>
             ${addrCell}
             <td><span class="rbadge ${badge}">${esc(lbl)}</span></td>
             <td class="rcnt">${r.byteCount}</td>
@@ -473,15 +501,6 @@ function renderRecordView(): void {
     }).join('');
 
     el.innerHTML = `<table class="rtbl"><thead>${header}</thead><tbody>${rows}</tbody></table>`;
-
-    el.querySelectorAll<HTMLElement>('tr[data-goto], td[data-goto]').forEach(cell => {
-        cell.style.cursor = 'pointer';
-        cell.title = 'Jump to address in Memory view';
-        cell.addEventListener('click', () => {
-            const addr = parseInt(cell.dataset.goto!, 16);
-            if (!isNaN(addr)) { switchView('memory'); scrollTo(addr); }
-        });
-    });
 }
 
 // ── View switching ────────────────────────────────────────────────
@@ -494,6 +513,8 @@ function switchView(v: 'memory' | 'record'): void {
     document.getElementById('btn-rec')     ?.classList.toggle('active',  v === 'record');
     document.getElementById('btn-edit-mode')!.style.display = v === 'memory' ? '' : 'none';
     document.getElementById('edit-mode-group')!.style.display = v === 'memory' && S.editMode ? '' : 'none';
+    document.getElementById('sidebar')!.style.display = v === 'memory' ? '' : 'none';
+    document.getElementById('side-tabs')!.style.display = v === 'memory' ? '' : 'none';
     if (v === 'memory')      { memRerender(); }
     else if (v === 'record') { renderRecordView(); }
 }
@@ -504,6 +525,13 @@ type IncomingFile = {
     parseResult: typeof S.parseResult;
     labels: typeof S.labels;
 };
+
+/** Remove all external change banners to ensure only latest state is shown. */
+function removeAllExternalChangeBanners(): void {
+    document.getElementById('ext-conflict-banner')?.remove();
+    document.getElementById('ext-reload-banner')?.remove();
+    document.getElementById('ext-error-banner')?.remove();
+}
 
 /** Apply an external file change directly (no unsaved edits to worry about). */
 function applyExternalChange(incoming: IncomingFile): void {
@@ -527,9 +555,8 @@ function showExternalChangeConflict(incoming: IncomingFile): void {
     banner.className = 'ext-conflict-banner';
     banner.innerHTML =
         `<span class="ecb-icon">⚠</span>` +
-        `<span class="ecb-msg">File changed externally. You have <strong>${S.edits.size}</strong> unsaved edit${S.edits.size === 1 ? '' : 's'}.</span>` +
-        `<button class="ecb-btn ecb-reload"  id="ecb-reload">Reload &amp; discard my edits</button>` +
-        `<button class="ecb-btn ecb-keep"    id="ecb-keep">Keep my edits</button>`;
+        `<span class="ecb-msg">File changed externally. You have <strong>${S.edits.size}</strong> unsaved edit${S.edits.size === 1 ? '' : 's'}. Changes must be reloaded.</span>` +
+        `<button class="ecb-btn ecb-reload"  id="ecb-reload">Reload &amp; discard my edits</button>`;
 
     document.getElementById('app')!.prepend(banner);
 
@@ -539,14 +566,214 @@ function showExternalChangeConflict(incoming: IncomingFile): void {
         S.edits.clear();
         S.undoStack.length = 0;
         S.editMode = false;
-        applyExternalChange(incoming);
-    });
-
-    document.getElementById('ecb-keep')!.addEventListener('click', () => {
-        banner.remove();
-        // Dismiss — keep current state, tell provider to sync its own copy
+        S.parseResult = incoming.parseResult;
+        S.labels      = incoming.labels;
+        initFlatBytes();
+        buildMemRows();
+        S.currentView = 'memory';
+        S.lockedDueToExternalChange = false;
+        updateLockState();
+        render();
         vscode.postMessage({ type: 'reloadAccepted' });
     });
+}
+
+/** Show a reload banner when external change arrives and there are no unsaved edits. */
+function showExternalChangeReloadBanner(incoming: IncomingFile): void {
+    // Remove any previous banner
+    document.getElementById('ext-reload-banner')?.remove();
+
+    const banner = document.createElement('div');
+    banner.id = 'ext-reload-banner';
+    banner.className = 'ext-reload-banner';
+    banner.innerHTML =
+        `<span class="erb-icon">🔄</span>` +
+        `<span class="erb-msg">File changed externally. Reloading...</span>` +
+        `<button class="erb-btn erb-reload"  id="erb-reload">Reload</button>`;
+
+    document.getElementById('app')!.prepend(banner);
+
+    document.getElementById('erb-reload')!.addEventListener('click', () => {
+        banner.remove();
+        S.parseResult = incoming.parseResult;
+        S.labels      = incoming.labels;
+        initFlatBytes();
+        buildMemRows();
+        S.currentView = 'memory';
+        S.lockedDueToExternalChange = false;
+        updateLockState();
+        render();
+        vscode.postMessage({ type: 'reloadAccepted' });
+    });
+}
+
+/** Update UI lock state when external change occurs or is resolved. */
+function updateLockState(): void {
+    const app = document.getElementById('app');
+    if (!app) { return; }
+    
+    if (S.lockedDueToExternalChange) {
+        app.classList.add('locked-due-to-external-change');
+        // Disable all interactive elements except banner buttons
+        disableAllInteractiveElements();
+        // Add click interception
+        addLockClickInterception();
+    } else {
+        app.classList.remove('locked-due-to-external-change');
+        // Re-enable all interactive elements
+        enableAllInteractiveElements();
+        // Remove click interception
+        removeLockClickInterception();
+    }
+}
+
+/** Prevent all clicks in main area when locked (except on banners). */
+function addLockClickInterception(): void {
+    const mainArea = document.getElementById('main-area');
+    const toolbar = document.getElementById('toolbar');
+    
+    if (mainArea) {
+        mainArea.addEventListener('click', preventClickWhenLocked, { capture: true });
+    }
+    if (toolbar) {
+        toolbar.addEventListener('click', preventClickWhenLocked, { capture: true });
+    }
+}
+
+/** Remove click interception when unlocked. */
+function removeLockClickInterception(): void {
+    const mainArea = document.getElementById('main-area');
+    const toolbar = document.getElementById('toolbar');
+    
+    if (mainArea) {
+        mainArea.removeEventListener('click', preventClickWhenLocked, { capture: true });
+    }
+    if (toolbar) {
+        toolbar.removeEventListener('click', preventClickWhenLocked, { capture: true });
+    }
+}
+
+/** Prevent click event if locked. */
+function preventClickWhenLocked(e: Event): void {
+    if (S.lockedDueToExternalChange) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+    }
+}
+
+/** Disable all buttons, inputs, and clickable elements when locked. */
+function disableAllInteractiveElements(): void {
+    const mainArea = document.getElementById('main-area');
+    const toolbar = document.getElementById('toolbar');
+    
+    if (mainArea) {
+        const elements = mainArea.querySelectorAll('button, input, [role="button"]');
+        elements.forEach(el => {
+            const elem = el as HTMLElement;
+            elem.setAttribute('data-was-enabled', 'true');
+            if (elem instanceof HTMLButtonElement || elem instanceof HTMLInputElement) {
+                elem.disabled = true;
+            }
+        });
+    }
+    
+    if (toolbar) {
+        const elements = toolbar.querySelectorAll('button, input, [role="button"]');
+        elements.forEach(el => {
+            const elem = el as HTMLElement;
+            elem.setAttribute('data-was-enabled', 'true');
+            if (elem instanceof HTMLButtonElement || elem instanceof HTMLInputElement) {
+                elem.disabled = true;
+            }
+        });
+    }
+}
+
+/** Re-enable all interactive elements that were disabled by lock. */
+function enableAllInteractiveElements(): void {
+    const mainArea = document.getElementById('main-area');
+    const toolbar = document.getElementById('toolbar');
+    
+    if (mainArea) {
+        const elements = mainArea.querySelectorAll('[data-was-enabled="true"]');
+        elements.forEach(el => {
+            const elem = el as HTMLElement;
+            elem.removeAttribute('data-was-enabled');
+            if (elem instanceof HTMLButtonElement || elem instanceof HTMLInputElement) {
+                elem.disabled = false;
+            }
+        });
+    }
+    
+    if (toolbar) {
+        const elements = toolbar.querySelectorAll('[data-was-enabled="true"]');
+        elements.forEach(el => {
+            const elem = el as HTMLElement;
+            elem.removeAttribute('data-was-enabled');
+            if (elem instanceof HTMLButtonElement || elem instanceof HTMLInputElement) {
+                elem.disabled = false;
+            }
+        });
+    }
+}
+
+/** Show an error banner when external change results in an invalid file. */
+function showExternalChangeError(checksumErrors: number, malformedLines: number, errorCount: number, canQuickRepair: boolean): void {
+    // Remove any previous banner
+    document.getElementById('ext-error-banner')?.remove();
+
+    const banner = document.createElement('div');
+    banner.id = 'ext-error-banner';
+    banner.className = 'ext-error-banner';
+    
+    let errorMsg = '';
+    if (checksumErrors > 0 && malformedLines > 0) {
+        errorMsg = `${checksumErrors} checksum error${checksumErrors === 1 ? '' : 's'} and ${malformedLines} malformed line${malformedLines === 1 ? '' : 's'}`;
+    } else if (checksumErrors > 0) {
+        errorMsg = `${checksumErrors} checksum error${checksumErrors === 1 ? '' : 's'}`;
+    } else {
+        errorMsg = `${malformedLines} malformed line${malformedLines === 1 ? '' : 's'}`;
+    }
+    
+    let buttonHtml = '';
+    if (canQuickRepair) {
+        // Only checksum errors — offer quick repair option only
+        buttonHtml =
+            `<button class="eeb-btn eeb-repair"  id="eeb-repair">Quick Repair &amp; reload</button>`;
+    } else {
+        // Malformed lines present — can't auto-repair, just offer to switch to text editor
+        buttonHtml =
+            `<button class="eeb-btn eeb-view-text" id="eeb-view-text">View in text editor</button>`;
+    }
+    
+    banner.innerHTML =
+        `<span class="eeb-icon">❌</span>` +
+        `<span class="eeb-msg">File changed externally and is now invalid: <strong>${errorMsg}</strong></span>` +
+        buttonHtml;
+
+    document.getElementById('app')!.prepend(banner);
+
+    const repairBtn = document.getElementById('eeb-repair');
+    if (repairBtn) {
+        repairBtn.addEventListener('click', () => {
+            vscode.postMessage({ type: 'repairAndReload' });
+        });
+    }
+
+    const closeBtn = document.getElementById('eeb-close');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            vscode.postMessage({ type: 'closePanel' });
+        });
+    }
+
+    const viewTextBtn = document.getElementById('eeb-view-text');
+    if (viewTextBtn) {
+        viewTextBtn.addEventListener('click', () => {
+            vscode.postMessage({ type: 'viewInNormalEditor' });
+        });
+    }
 }
 
 function getOriginalByte(addr: number): number | undefined {

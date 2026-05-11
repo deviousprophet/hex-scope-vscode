@@ -17,7 +17,7 @@
     padding: 3px 10px; border-bottom: 1px solid rgba(255,255,255,.04);
     white-space: nowrap; vertical-align: middle;
 }
-.rtbl tbody tr:hover td            { background: var(--hover-bg); cursor: pointer; }
+.rtbl tbody tr:hover td            { background: var(--hover-bg); cursor: default; }
 .rtbl tbody tr.rerr td             { background: rgba(244,135,113,.06); }
 .rtbl tbody tr.rerr:hover td       { background: rgba(244,135,113,.1); }
 

@@ -26,4 +26,5 @@ export const S = {
     activeStructAddr: null as number | null,   // base address for struct decode
     structPins:   [] as StructPin[],           // saved (structId, addr) overlay instances
     sidebarTab:     'inspector' as 'inspector' | 'struct',  // active sidebar tab
+    lockedDueToExternalChange: false as boolean,  // view is locked pending external change action
 };
